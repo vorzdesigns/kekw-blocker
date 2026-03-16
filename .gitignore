@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.zip
+extraction-failure.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

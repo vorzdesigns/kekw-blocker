@@ -1,0 +1,76 @@
+{
+  "manifest_version": 2,
+  "name": "KEKW Blocker",
+  "version": "1.0.0",
+  "description": "Twitch ad blocker with self-healing config",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ttv-adblock@example.com",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "tabs",
+    "storage",
+    "*://*.twitch.tv/*",
+    "*://usher.ttvnw.net/*",
+    "*://*.hls.ttvnw.net/*",
+    "*://*.ttvnw.net/*",
+    "*://*.cloudfront.net/*",
+    "*://ad.doubleclick.net/*",
+    "*://imasdk.googleapis.com/*",
+    "*://pubads.g.doubleclick.net/*",
+    "*://www.googleadservices.com/*",
+    "*://video-ad-stats.googlesyndication.com/*",
+    "*://pagead2.googlesyndication.com/*",
+    "*://securepubads.g.doubleclick.net/*",
+    "*://*.amazon-adsystem.com/*",
+    "*://dorquex-ctrl.github.io/*"
+  ],
+  "options_page": "options/options.html",
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "scripts": [
+      "src/browser-polyfill.js",
+      "src/config.js",
+      "src/background/state.js",
+      "src/background/badge.js",
+      "src/background/layers/segment-sub.js",
+      "src/background/orchestrator.js",
+      "src/background/remote-config.js",
+      "src/background/main.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.twitch.tv/*"],
+      "js": ["src/browser-polyfill.js", "src/config.js", "src/content/inject-early.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*.twitch.tv/*"],
+      "js": ["src/browser-polyfill.js", "src/config.js", "src/content/player-monitor.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    "assets/blank.ts",
+    "src/content/page-inject.js"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

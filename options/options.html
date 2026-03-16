@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  max-width: 500px;
+  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0e0e10;
+  color: #efeff1;
+  padding: 24px;
+}
+h1 { font-size: 18px; margin-bottom: 20px; }
+h2 { font-size: 14px; color: #bf94ff; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.option-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #18181b;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.option-info { flex: 1; margin-right: 12px; }
+.option-label { font-size: 13px; font-weight: 500; }
+.option-desc { font-size: 11px; color: #adadb8; margin-top: 2px; }
+.toggle { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
+.toggle input { opacity: 0; position: absolute; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; background: #3a3a3d; border-radius: 10px; transition: 0.2s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; width: 16px; height: 16px;
+  left: 2px; bottom: 2px; background: white; border-radius: 50%; transition: 0.2s;
+}
+.toggle input:checked + .toggle-slider { background: #bf94ff; }
+.toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+select {
+  background: #2f2f35; color: #efeff1; border: none; border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; cursor: pointer; flex-shrink: 0;
+}
+.save-note { color: #adadb8; font-size: 11px; text-align: center; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <h1>KEKW Blocker Options</h1>
+
+  <h2>Ad Blocking</h2>
+  <div class="option-row">
+    <div class="option-info">
+      <div class="option-label">Force Player Type</div>
+      <div class="option-desc">Player type used for the main stream request</div>
+    </div>
+    <select id="forcePlayerType">
+      <option value="popout">popout (default)</option>
+      <option value="embed">embed</option>
+      <option value="">disabled</option>
+    </select>
+  </div>
+  <div class="option-row">
+    <div class="option-info">
+      <div class="option-label">Reload Player After Ad</div>
+      <div class="option-desc">Do a full player reload when ads end to ensure clean playback</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="reloadAfterAd" aria-label="Reload player after ad" checked><span class="toggle-slider"></span></label>
+  </div>
+  <div class="option-row">
+    <div class="option-info">
+      <div class="option-label">Block Tracking</div>
+      <div class="option-desc">Block spade.twitch.tv, countess, and ad network requests</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="blockTracking" aria-label="Block tracking" checked><span class="toggle-slider"></span></label>
+  </div>
+
+  <h2>Player</h2>
+  <div class="option-row">
+    <div class="option-info">
+      <div class="option-label">Buffering Auto-Fix</div>
+      <div class="option-desc">Automatically pause/play when playback stalls</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="bufferingFix" aria-label="Buffering auto-fix" checked><span class="toggle-slider"></span></label>
+  </div>
+  <div class="option-row">
+    <div class="option-info">
+      <div class="option-label">Visibility Spoofing</div>
+      <div class="option-desc">Prevent Twitch from pausing when tab is inactive</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="visibilitySpoofing" aria-label="Visibility spoofing" checked><span class="toggle-slider"></span></label>
+  </div>
+
+  <h2>Quality of Life</h2>
+  <div class="option-row">
+    <div class="option-info">
+      <div class="option-label">Auto-Claim Channel Points</div>
+      <div class="option-desc">Automatically click the bonus channel points button</div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="autoClaimPoints" aria-label="Auto-claim channel points" checked><span class="toggle-slider"></span></label>
+  </div>
+
+  <div class="save-note">Settings are saved automatically</div>
+
+  <script src="options.js"></script>
+</body>
+</html>
