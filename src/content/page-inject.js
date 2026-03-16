@@ -20,6 +20,8 @@
 
   var _cfg = window.__TTV_CONFIG || {};
   var _nonce = window.__TTV_NONCE || "";
+  try { delete window.__TTV_CONFIG; } catch (e) {}
+  try { delete window.__TTV_NONCE; } catch (e) {}
   var _cfgGql = _cfg.gql || {};
   var _cfgHls = _cfg.hls || {};
   var _cfgPlayer = _cfg.player || {};
@@ -34,7 +36,7 @@
   // are injected into the worker blob via string interpolation (see hookWindowWorker).
   function declareOptions(scope) {
     scope.AdSignifier = "stitched";
-    scope.ClientID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+    scope.ClientID = "b31o4btkqth5bzbvr9ub2ovr79umhh";
     scope.BackupPlayerTypes = ["embed", "site", "popout", "autoplay"];
     scope.FallbackPlayerType = "embed";
     scope.ForceAccessTokenPlayerType = "popout";
@@ -102,7 +104,7 @@
           var workerString = getWasmWorkerJs(" + JSON.stringify(twitchBlobUrl) + ");\
           declareOptions(self);\
           AdSignifier = " + JSON.stringify(_cfgHls.adSignifier || "stitched") + ";\
-          ClientID = " + JSON.stringify(_cfgGql.clientId || "kimne78kx3ncx6brgo4mv6wki5h1ko") + ";\
+          ClientID = " + JSON.stringify(_cfgGql.clientId || "b31o4btkqth5bzbvr9ub2ovr79umhh") + ";\
           BackupPlayerTypes = " + JSON.stringify(_cfgPlayer.backupPlayerTypes || ["embed","site","popout","autoplay"]) + ";\
           FallbackPlayerType = " + JSON.stringify(_cfgPlayer.fallbackPlayerType || "embed") + ";\
           ForceAccessTokenPlayerType = " + JSON.stringify(_cfgPlayer.forceAccessTokenPlayerType || "popout") + ";\
@@ -693,12 +695,14 @@
     // Clear any existing timers (including old channels)
     for (var key in _preWarmTimers) {
       if (key !== channelName) {
-        clearInterval(_preWarmTimers[key]);
+        clearTimeout(_preWarmTimers[key].initial);
+        clearInterval(_preWarmTimers[key].interval);
         delete _preWarmTimers[key];
       }
     }
     if (_preWarmTimers[channelName]) {
-      clearInterval(_preWarmTimers[channelName]);
+      clearTimeout(_preWarmTimers[channelName].initial);
+      clearInterval(_preWarmTimers[channelName].interval);
     }
 
     var fetchFn = _realFetch || window.fetch;
@@ -729,7 +733,10 @@
     function doPreWarm() {
       // Stop if the worker was terminated or replaced
       if (twitchWorkers.indexOf(workerRef) === -1) {
-        clearInterval(_preWarmTimers[channelName]);
+        if (_preWarmTimers[channelName]) {
+          clearTimeout(_preWarmTimers[channelName].initial);
+          clearInterval(_preWarmTimers[channelName].interval);
+        }
         delete _preWarmTimers[channelName];
         return;
       }
@@ -762,9 +769,10 @@
       }
     }
 
-    setTimeout(doPreWarm, 3000 + Math.random() * 2000);
+    var initialId = setTimeout(doPreWarm, 3000 + Math.random() * 2000);
     var jitter = Math.floor(Math.random() * 60000);
-    _preWarmTimers[channelName] = setInterval(doPreWarm, _PRE_WARM_REFRESH_MS + jitter);
+    var intervalId = setInterval(doPreWarm, _PRE_WARM_REFRESH_MS + jitter);
+    _preWarmTimers[channelName] = { initial: initialId, interval: intervalId };
   }
 
   // ==========================================================================
@@ -1258,14 +1266,22 @@
 
   declareOptions(window);
 
-  // Make sensitive globals non-enumerable so they don't appear in
-  // Object.keys(window) or for...in loops. They remain accessible by
-  // name within this IIFE but are harder for page scripts to discover.
-  ["AuthorizationHeader", "ClientIntegrityHeader", "GQLDeviceID",
-   "ClientSession", "ClientVersion"].forEach(function (prop) {
-    Object.defineProperty(window, prop, {
-      value: window[prop], writable: true, enumerable: false, configurable: true
-    });
+  // Make all declareOptions globals non-enumerable so they don't appear in
+  // Object.keys(window) or for...in loops. Prevents page scripts from
+  // easily discovering extension internals or detecting the extension.
+  ["AdSignifier", "ClientID", "BackupPlayerTypes", "FallbackPlayerType",
+   "ForceAccessTokenPlayerType", "PlaybackAccessTokenHash", "GqlUrl",
+   "ReloadPlayerAfterAd", "PlayerReloadMinimalRequestsTime",
+   "PlayerReloadMinimalRequestsPlayerIndex", "HasTriggeredPlayerReload",
+   "StreamInfos", "StreamInfosByUrl", "GQLDeviceID", "ClientIntegrityHeader",
+   "AuthorizationHeader", "ClientVersion", "ClientSession", "V2API",
+   "IsAdStrippingEnabled", "AdSegmentCache", "AllSegmentsAreAdSegments",
+   "HashFailedOnce", "PlaybackAccessTokenQuery"].forEach(function (prop) {
+    if (prop in window) {
+      Object.defineProperty(window, prop, {
+        value: window[prop], writable: true, enumerable: false, configurable: true
+      });
+    }
   });
 
   // Override defaults with config values (main thread only)
@@ -1281,7 +1297,7 @@
   hookFetch();
   monitorPlayerBuffering();
 
-  if (document.readyState === "complete" || document.readyState === "loaded" || document.readyState === "interactive") {
+  if (document.readyState === "complete" || document.readyState === "interactive") {
     onContentLoaded();
   } else {
     window.addEventListener("DOMContentLoaded", function () { onContentLoaded(); });
@@ -1341,7 +1357,5 @@
     }
   });
 
-  // Expose option check for buffering monitor
-
-  console.log("[TTV] KEKW Blocker v3 active");
+  console.log("[TTV] KEKW Blocker v1.0 active");
 })();

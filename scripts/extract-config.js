@@ -291,11 +291,7 @@ async function main() {
     if (changes.length > 0) {
       console.log(`\n[extract] ${changes.length} change(s) detected:`);
       for (const change of changes) {
-        if (change.added) {
-          console.log(`  ${change.field}: added ${change.added.join(", ")}`);
-        } else {
-          console.log(`  ${change.field}: ${change.old} -> ${change.new}`);
-        }
+        console.log(`  ${change.field}: ${change.old} -> ${change.new}`);
       }
 
       // Write any successful changes first, regardless of failures

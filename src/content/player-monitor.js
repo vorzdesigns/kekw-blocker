@@ -21,6 +21,10 @@
   var PURPLE_SCREEN_RELOAD_COOLDOWN = 5000;
   var PURPLE_SCREEN_RELOAD_THRESHOLD = 3; // reload after seeing purple screen for this many checks
 
+  // Read nonce once at load, then clear from DOM to reduce exposure window
+  var _ttvNonce = document.documentElement.getAttribute("data-ttv-nonce") || "";
+  document.documentElement.removeAttribute("data-ttv-nonce");
+
   var _cachedChannel = null;
   var _cachedPathname = null;
 
@@ -54,12 +58,12 @@
         console.log("[TTV] Content: Purple screen persisted — triggering player reload");
         lastPurpleScreenReload = Date.now();
         purpleScreenCount = 0;
+        adDetected = true; // Prevent duplicate message from the ad detection block below
         // Bridge to page context via CustomEvent (content scripts can't call page globals directly)
-        var _n = document.documentElement.getAttribute("data-ttv-nonce") || "";
-        window.dispatchEvent(new CustomEvent("ttv-" + _n + "-notify", {
+        window.dispatchEvent(new CustomEvent("ttv-" + _ttvNonce + "-notify", {
           detail: { message: "KEKW Blocker: Recovering from commercial break" }
         }));
-        window.dispatchEvent(new CustomEvent("ttv-" + _n + "-reload"));
+        window.dispatchEvent(new CustomEvent("ttv-" + _ttvNonce + "-reload"));
         // Also notify background
         chrome.runtime.sendMessage({
           type: "PURPLE_SCREEN_DETECTED",
@@ -148,8 +152,7 @@
 
   var lastAdBlockStatus = false;
 
-  var _n2 = document.documentElement.getAttribute("data-ttv-nonce") || "";
-  window.addEventListener("ttv-" + _n2 + "-adblock-status", function (e) {
+  window.addEventListener("ttv-" + _ttvNonce + "-adblock-status", function (e) {
     if (!e.detail) return;
     var channel = getChannelName();
     if (!channel) return;

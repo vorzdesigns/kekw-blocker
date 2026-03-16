@@ -35,7 +35,7 @@ var TTV_CONFIG = Object.freeze({
     url: "https://gql.twitch.tv/gql",
 
     /** Twitch Client-ID for GQL requests */
-    clientId: "kimne78kx3ncx6brgo4mv6wki5h1ko",
+    clientId: "b31o4btkqth5bzbvr9ub2ovr79umhh",
 
     /** SHA256 hash for PlaybackAccessToken persisted query */
     playbackAccessTokenHash: "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
