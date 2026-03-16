@@ -1,22 +1,8 @@
-/**
- * KEKW Blocker — Page-level interceptor (v3)
- *
- * Based on VAFT's proven architecture, enhanced with:
- * 1. Quality-matched backup streams (resolution + codec matching)
- * 2. HEVC codec detection + AVC fallback
- * 3. Network-level ad blocking via extension background script
- * 4. Player reload on codec mismatch
- * 5. localStorage preservation for volume/quality across reloads
- * 6. React-internal buffering detection and auto-fix
- * 7. Visibility spoofing with video play recovery
- */
+// KEKW Blocker — VAFT-based Worker hook with backup player switching,
+// pre-warmed streams, buffering auto-fix, and visibility spoofing.
 (function () {
   "use strict";
   if (!/(^|\.)twitch\.tv$/.test(document.location.hostname)) return;
-
-  // ==========================================================================
-  // Config — read from page global set by inject-early.js
-  // ==========================================================================
 
   var _cfg = window.__TTV_CONFIG || {};
   var _nonce = window.__TTV_NONCE || "";
@@ -27,9 +13,7 @@
   var _cfgPlayer = _cfg.player || {};
   var _cfgReact = _cfg.react || {};
 
-  // ==========================================================================
-  // Options (shared between main thread and worker via toString injection)
-  // ==========================================================================
+  // --- Options (shared between main thread and worker via toString injection)
 
   // declareOptions is stringified into the Worker blob, so it CANNOT reference
   // closure variables like _cfg*. It uses bare defaults. The actual config values
@@ -63,9 +47,7 @@
 
   var twitchWorkers = [];
 
-  // ==========================================================================
-  // Worker hook — class-based approach matching VAFT
-  // ==========================================================================
+  // --- Worker hook — class-based approach matching VAFT
 
   function getWasmWorkerJs(twitchBlobUrl) {
     var req = new XMLHttpRequest();
@@ -136,6 +118,8 @@
             } else if (e.data.key == 'SetAdStrippingEnabled') {\
               IsAdStrippingEnabled = !!e.data.value;\
               console.log('[TTV Worker] Ad stripping ' + (IsAdStrippingEnabled ? 'enabled' : 'disabled'));\
+            } else if (e.data.key == 'UpdateForceAccessTokenPlayerType') {\
+              ForceAccessTokenPlayerType = e.data.value || '';\
             } else if (e.data.key == 'PreWarmCache') {\
               var si = StreamInfos[e.data.channelName];\
               if (si && !si.IsShowingAd) {\
@@ -157,8 +141,15 @@
           URL.revokeObjectURL(blobUrl);
         });
         this.addEventListener("message", function (e) {
-          if (e.data.key == "PauseResumePlayer") doTwitchPlayerTask(true, false);
-          else if (e.data.key == "ReloadPlayer") doTwitchPlayerTask(false, true);
+          if (e.data.key == "PauseResumePlayer" || e.data.key == "ReloadPlayer") {
+            // Only act if the channel matches the current page (prevents wrong-channel reloads)
+            if (e.data.channelName) {
+              var currentPath = window.location.pathname.split("/")[1];
+              if (currentPath && currentPath.toLowerCase() !== e.data.channelName.toLowerCase()) return;
+            }
+            if (e.data.key == "PauseResumePlayer") doTwitchPlayerTask(true, false);
+            else doTwitchPlayerTask(false, true);
+          }
           else if (e.data.key == "StreamInitialized") {
             preWarmBackupStreams(e.data.channelName, e.data.usherParams, e.data.v2api, workerRef);
           }
@@ -198,9 +189,7 @@
     });
   }
 
-  // ==========================================================================
-  // Functions injected into the worker (stringified)
-  // ==========================================================================
+  // --- Functions injected into the worker (stringified)
 
   function hookWorkerFetch() {
     console.log("[TTV Worker] hookWorkerFetch (v3)");
@@ -243,7 +232,21 @@
                 if (streamInfo != null && streamInfo.EncodingsM3U8 != null && (await realFetch(streamInfo.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
                   streamInfo = null;
                 }
+                // Reset HEVC state on re-entry to prevent stale codec swapping
+                if (streamInfo != null && !streamInfo.IsShowingAd) {
+                  streamInfo.IsUsingModifiedM3U8 = false;
+                }
                 if (streamInfo == null || streamInfo.EncodingsM3U8 == null) {
+                  // Clean up stale entries from other channels to prevent memory leaks
+                  for (var oldKey in StreamInfos) {
+                    if (oldKey !== channelName) {
+                      var oldInfo = StreamInfos[oldKey];
+                      if (oldInfo && oldInfo.Urls) {
+                        for (var oldUrl in oldInfo.Urls) { delete StreamInfosByUrl[oldUrl]; }
+                      }
+                      delete StreamInfos[oldKey];
+                    }
+                  }
                   StreamInfos[channelName] = streamInfo = {
                     ChannelName: channelName,
                     IsShowingAd: false,
@@ -384,8 +387,10 @@
     var encodingsLines = encodingsM3u8.replaceAll("\r", "").split("\n");
     var parts = resolutionInfo.Resolution.split("x").map(Number);
     var targetWidth = parts[0], targetHeight = parts[1];
+    var targetIsHevc = resolutionInfo.Codecs && (resolutionInfo.Codecs.startsWith("hev") || resolutionInfo.Codecs.startsWith("hvc"));
     var matchedResolutionUrl = null;
     var matchedFrameRate = false;
+    var matchedCodec = false;
     var closestResolutionUrl = null;
     var closestResolutionDifference = Infinity;
     for (var i = 0; i < encodingsLines.length - 1; i++) {
@@ -393,15 +398,29 @@
         var attributes = parseAttributes(encodingsLines[i]);
         var resolution = attributes["RESOLUTION"];
         var frameRate = attributes["FRAME-RATE"];
+        var codecs = attributes["CODECS"] || "";
+        var isHevc = codecs.startsWith("hev") || codecs.startsWith("hvc");
+        var codecMatch = (targetIsHevc === isHevc);
         if (resolution) {
-          if (resolution == resolutionInfo.Resolution && (!matchedResolutionUrl || (!matchedFrameRate && frameRate == resolutionInfo.FrameRate))) {
-            matchedResolutionUrl = encodingsLines[i + 1];
-            matchedFrameRate = frameRate == resolutionInfo.FrameRate;
-            if (matchedFrameRate) return matchedResolutionUrl;
+          if (resolution == resolutionInfo.Resolution) {
+            // Prefer same codec family, then same frame rate
+            var isBetter = !matchedResolutionUrl ||
+              (!matchedCodec && codecMatch) ||
+              (codecMatch === matchedCodec && !matchedFrameRate && frameRate == resolutionInfo.FrameRate);
+            if (isBetter) {
+              matchedResolutionUrl = encodingsLines[i + 1];
+              matchedFrameRate = frameRate == resolutionInfo.FrameRate;
+              matchedCodec = codecMatch;
+              if (matchedFrameRate && matchedCodec) return matchedResolutionUrl;
+            }
           }
+          // For closest-resolution fallback, prefer matching codec family
           var rp = resolution.split("x").map(Number);
           var difference = Math.abs((rp[0] * rp[1]) - (targetWidth * targetHeight));
-          if (difference < closestResolutionDifference) {
+          if (codecMatch && difference < closestResolutionDifference) {
+            closestResolutionUrl = encodingsLines[i + 1];
+            closestResolutionDifference = difference;
+          } else if (!closestResolutionUrl && difference < closestResolutionDifference) {
             closestResolutionUrl = encodingsLines[i + 1];
             closestResolutionDifference = difference;
           }
@@ -537,9 +556,9 @@
       if (streamInfo.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
         streamInfo.IsUsingModifiedM3U8 = false;
         streamInfo.LastPlayerReload = Date.now();
-        postMessage({ key: "ReloadPlayer" });
+        postMessage({ key: "ReloadPlayer", channelName: streamInfo.ChannelName });
       } else {
-        postMessage({ key: "PauseResumePlayer" });
+        postMessage({ key: "PauseResumePlayer", channelName: streamInfo.ChannelName });
       }
     }
 
@@ -659,9 +678,7 @@
     });
   }
 
-  // ==========================================================================
-  // Main thread: handle worker fetch requests
-  // ==========================================================================
+  // --- Main thread: handle worker fetch requests
 
   async function handleWorkerFetchRequest(fetchRequest) {
     try {
@@ -679,9 +696,7 @@
     }
   }
 
-  // ==========================================================================
-  // Main thread: pre-warm backup streams
-  // ==========================================================================
+  // --- Main thread: pre-warm backup streams
   // Proactively fetches access tokens + master playlists for all backup player
   // types so that when ads hit, processM3U8 finds cached entries and only needs
   // one media playlist fetch instead of 3 serial requests.
@@ -775,9 +790,7 @@
     _preWarmTimers[channelName] = { initial: initialId, interval: intervalId };
   }
 
-  // ==========================================================================
-  // Main thread: hook fetch for auth capture + playerType forcing
-  // ==========================================================================
+  // --- Main thread: hook fetch for auth capture + playerType forcing
 
   var _realFetch = null;
 
@@ -828,40 +841,29 @@
               }
             } catch (e) {}
           }
-          // Force playerType + filter picture-by-picture from PlaybackAccessToken requests
+          // Filter picture-by-picture from PlaybackAccessToken requests
+          // (PBP bypasses Worker hooks, leaking ads)
+          // NOTE: playerType is NOT forced here — the primary stream should use
+          // Twitch's native playerType for full quality. Backup streams handle
+          // playerType forcing inside the Worker's getAccessToken.
           if (typeof init.body === "string" && init.body.includes("PlaybackAccessToken")) {
             try {
               var newBody = JSON.parse(init.body);
               var items = Array.isArray(newBody) ? newBody : [newBody];
-              var changed = false;
-              // Filter out picture-by-picture items (they bypass Worker hooks, leaking ads)
               var filtered = items.filter(function (item) {
-                if (item && item.variables && item.variables.playerType === "picture-by-picture") {
-                  changed = true;
-                  return false;
-                }
-                return true;
+                return !(item && item.variables && item.variables.playerType === "picture-by-picture");
               });
-              // Force playerType on remaining items
-              if (ForceAccessTokenPlayerType) {
-                for (var i = 0; i < filtered.length; i++) {
-                  if (filtered[i] && filtered[i].variables && filtered[i].variables.playerType && filtered[i].variables.playerType !== ForceAccessTokenPlayerType) {
-                    console.log("[TTV] Forcing playerType: " + filtered[i].variables.playerType + " -> " + ForceAccessTokenPlayerType);
-                    filtered[i].variables.playerType = ForceAccessTokenPlayerType;
-                    changed = true;
-                  }
-                }
-              }
-              if (changed) {
+              if (filtered.length !== items.length) {
                 if (filtered.length === 0) {
-                  // All items were PBP — return empty response instead of sending broken request
-                  return Promise.resolve(new Response('{"data":{}}', { status: 200, headers: { "Content-Type": "application/json" } }));
+                  return Promise.resolve(new Response('{"data":{"streamPlaybackAccessToken":null}}', { status: 200, headers: { "Content-Type": "application/json" } }));
                 }
                 init = Object.assign({}, init, {
                   body: JSON.stringify(Array.isArray(newBody) ? filtered : filtered[0])
                 });
               }
-            } catch (e) {}
+            } catch (e) {
+              console.warn("[TTV] Failed to parse PlaybackAccessToken body:", e);
+            }
           }
       }
       return realFetch.call(this, url, init);
@@ -871,9 +873,7 @@
   // Listen for reload requests from content script (bridged via CustomEvent)
   window.addEventListener("ttv-" + _nonce + "-reload", function () { doTwitchPlayerTask(false, true); });
 
-  // ==========================================================================
-  // Player control (pause/play, reload)
-  // ==========================================================================
+  // --- Player control (pause/play, reload)
 
   function getPlayerAndState() {
     function findReactNode(root, constraint) {
@@ -969,9 +969,7 @@
     });
   }
 
-  // ==========================================================================
-  // User notification banner
-  // ==========================================================================
+  // --- User notification banner
 
   var _notifTimeout = null;
 
@@ -1026,9 +1024,7 @@
     if (e.detail && e.detail.message) showTtvNotification(e.detail.message);
   });
 
-  // ==========================================================================
-  // Buffering detection and auto-fix (via React player internals)
-  // ==========================================================================
+  // --- Buffering detection and auto-fix (via React player internals)
 
   var playerForMonitoringBuffering = null;
   var playerBufferState = {
@@ -1176,9 +1172,7 @@
     setTimeout(monitorPlayerBuffering, BUFFERING_DELAY);
   }
 
-  // ==========================================================================
-  // Visibility spoofing + localStorage hooks + content loaded setup
-  // ==========================================================================
+  // --- Visibility spoofing + localStorage hooks + content loaded setup
 
   function onContentLoaded() {
     // Visibility spoofing — guarded by _visibilitySpoofingEnabled
@@ -1256,9 +1250,7 @@
     }
   }
 
-  // ==========================================================================
-  // Init
-  // ==========================================================================
+  // --- Init
 
   // Option flags — must be declared before onContentLoaded uses them
   var _bufferingFixEnabled = true;
@@ -1309,6 +1301,7 @@
     var opts = e.detail;
     if (opts.forcePlayerType !== undefined) {
       ForceAccessTokenPlayerType = opts.forcePlayerType || "";
+      postTwitchWorkerMessage("UpdateForceAccessTokenPlayerType", ForceAccessTokenPlayerType);
       console.log("[TTV] Option: ForceAccessTokenPlayerType = " + (ForceAccessTokenPlayerType || "(disabled)"));
     }
     if (opts.reloadAfterAd !== undefined) {

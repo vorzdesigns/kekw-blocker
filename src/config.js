@@ -1,60 +1,29 @@
 /**
- * KEKW Blocker — Centralized Configuration
- *
- * ALL frequently-changing values live here. When Twitch breaks something,
- * this is the ONLY file you should need to edit.
- *
- * Each section has a `_updated` field (ISO date) so maintainers know
- * when the values were last verified against Twitch's live site.
- *
- * CONSUMPTION:
- *   - Background scripts: loaded first via manifest.json background.scripts,
- *     so TTV_CONFIG is a global in the background page context.
- *   - Content scripts (inject-early.js, player-monitor.js): loaded via
- *     manifest.json content_scripts, so they read TTV_CONFIG from the
- *     content script world. inject-early.js serializes it into page context.
- *   - page-inject.js: receives config via inject-early.js which sets
- *     window.__TTV_CONFIG before the script tag loads.
+ * Centralized config — all Twitch-specific values that change with updates.
+ * Loaded as a global in background, content scripts, and page context.
  */
 
 // eslint-disable-next-line no-unused-vars
 var TTV_CONFIG = Object.freeze({
 
-  // =========================================================================
   // Version — bump when you change this file
-  // =========================================================================
   _configVersion: "2026-03-15.1",
 
-  // =========================================================================
-  // GQL — GraphQL operation hashes, endpoints, and field names
-  // =========================================================================
+  // GQL
   gql: Object.freeze({
     _updated: "2026-03-15",
 
-    /** GQL endpoint URL */
     url: "https://gql.twitch.tv/gql",
-
-    /** Twitch Client-ID for GQL requests */
     clientId: "b31o4btkqth5bzbvr9ub2ovr79umhh",
-
-    /** SHA256 hash for PlaybackAccessToken persisted query */
     playbackAccessTokenHash: "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
   }),
 
-  // =========================================================================
-  // HLS / M3U8 — ad markers, segment patterns, URL patterns
-  // =========================================================================
+  // HLS
   hls: Object.freeze({
     _updated: "2026-03-15",
 
-    /** The string Twitch uses inside m3u8 to mark ad content.
-     *  Used by page-inject worker to detect ad playlists. */
-    adSignifier: "stitched",
-
-    /** Regex pattern (as string) matching ad segment URLs */
+    adSignifier: "stitched",            // String Twitch uses in m3u8 to mark ad content
     adSegmentUrlPattern: "\\/stitched-ad\\/",
-
-    /** URL patterns for segment interception */
     segmentUrlPatterns: Object.freeze([
       "*://*.hls.ttvnw.net/*.ts*",
       "*://*.ttvnw.net/*.ts*",
@@ -62,14 +31,11 @@ var TTV_CONFIG = Object.freeze({
     ]),
   }),
 
-  // =========================================================================
-  // Player Types — backup streams for ad-free content
-  // =========================================================================
+  // Player types — backup streams for ad-free content
   player: Object.freeze({
     _updated: "2026-03-15",
 
-    /** Ordered list of playerType values to try for backup streams.
-     *  First one that returns an ad-free m3u8 wins. */
+    // Tried in order; first ad-free m3u8 wins
     backupPlayerTypes: Object.freeze([
       "embed",
       "site",
@@ -77,21 +43,15 @@ var TTV_CONFIG = Object.freeze({
       "autoplay",
     ]),
 
-    /** Which playerType to use as last-resort fallback (even if it has ads) */
-    fallbackPlayerType: "embed",
-
-    /** Which playerType to force for the primary access token request */
-    forceAccessTokenPlayerType: "popout",
+    fallbackPlayerType: "embed",              // Last resort (may still have ads)
+    forceAccessTokenPlayerType: "popout",     // Used by Worker for backup token requests
 
   }),
 
-  // =========================================================================
-  // CSS Selectors — Twitch UI elements that change with redesigns
-  // =========================================================================
+  // CSS selectors — update when Twitch redesigns
   selectors: Object.freeze({
     _updated: "2026-03-15",
 
-    /** Ad overlay elements to detect and hide */
     adOverlay: Object.freeze([
       '[data-a-target="player-ad-overlay"]',
       ".ad-banner",
@@ -100,7 +60,6 @@ var TTV_CONFIG = Object.freeze({
       '[data-test-selector="ad-banner-default-id"]',
     ]),
 
-    /** Purple "Commercial Break" screen elements */
     purpleScreen: Object.freeze([
       '[data-a-target="player-overlay-commercial-break"]',
       ".commercial-break",
@@ -108,41 +67,28 @@ var TTV_CONFIG = Object.freeze({
       '[data-test-selector="ads-overlay"]',
     ]),
 
-    /** Channel points claim button */
     channelPointsClaim: Object.freeze([
       "button[aria-label='Claim Bonus']",
       "[data-test-selector='community-points-summary'] .claimable-bonus__icon",
     ]),
   }),
 
-  // =========================================================================
-  // React Internals — fiber tree node method/property names
-  // =========================================================================
+  // React internals — fiber tree node names
   react: Object.freeze({
     _updated: "2026-03-15",
 
-    /** Method on the React node that indicates it controls the player */
     playerActiveMethod: "setPlayerActive",
-
-    /** Property path to the media player instance */
     mediaPlayerProp: "mediaPlayerInstance",
-
-    /** Methods on the state node used for player reload */
     setSrcMethod: "setSrc",
     setInitialPlaybackMethod: "setInitialPlaybackSettings",
-
-    /** The React container key prefix on the DOM root */
     containerKeyPrefix: "__reactContainer",
   }),
 
-  // =========================================================================
-  // Tracking / Ad Network URLs — blocked at the network level
-  // =========================================================================
+  // Tracking / ad network URLs — blocked via webRequest
   tracking: Object.freeze({
     _updated: "2026-03-15",
 
-    /** URL patterns to block via webRequest. Also used in manifest.json
-     *  permissions (those must be updated manually if domains change). */
+    // Keep manifest.json permissions in sync if domains change
     blockedUrlPatterns: Object.freeze([
       // Twitch internal tracking
       "*://spade.twitch.tv/*",
@@ -163,13 +109,10 @@ var TTV_CONFIG = Object.freeze({
     ]),
   }),
 
-  // =========================================================================
-  // URL Routing — reserved Twitch path segments (not channels)
-  // =========================================================================
+  // URL routing
   routing: Object.freeze({
     _updated: "2026-03-15",
 
-    /** URL path segments that are NOT channel names */
     reservedPaths: Object.freeze([
       "directory", "videos", "settings", "subscriptions",
       "inventory", "drops", "u", "moderator", "downloads",

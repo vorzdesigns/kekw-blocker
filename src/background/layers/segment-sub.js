@@ -1,9 +1,4 @@
-/**
- * Segment Substitution
- *
- * Redirects any .ts segment with /stitched-ad/ in the URL to a silent
- * blank segment. This catches ad segments that the Worker hook misses.
- */
+// Redirects /stitched-ad/ segments to a silent blank .ts file.
 
 const SEGMENT_URL_PATTERNS = TTV_CONFIG.hls.segmentUrlPatterns.slice();
 const AD_SEGMENT_RE = new RegExp(TTV_CONFIG.hls.adSegmentUrlPattern, 'i');

@@ -1,11 +1,4 @@
-/**
- * Badge — real-time visual status on the extension icon.
- * Persists lifetime stats via chrome.storage.local.
- *
- * Green  = idle / clean stream
- * Orange = actively blocking ads
- * Red    = ads may be leaking
- */
+// Badge: green=clean, orange=blocking, red=leaking. Stats persisted to storage.
 
 const Badge = {
   _tabChannels: new Map(),  // tabId -> channelName
@@ -140,15 +133,12 @@ const Badge = {
   },
 
   init() {
-    // Load persisted stats
     this._loadLifetime();
 
-    // Clean up closed tabs
     chrome.tabs.onRemoved.addListener((tabId) => {
       this._tabChannels.delete(tabId);
     });
 
-    // Track channel from URL changes
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.url || changeInfo.status === 'complete') {
         const url = changeInfo.url || (tab && tab.url);

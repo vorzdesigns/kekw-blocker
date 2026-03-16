@@ -1,10 +1,4 @@
-/**
- * Per-channel state machine for ad-blocking escalation.
- *
- * States: IDLE -> SUBSTITUTING
- * Each channel escalates independently when a layer reports failure.
- * Channels de-escalate after a cooldown with no ad activity.
- */
+// Per-channel state: IDLE -> SUBSTITUTING. Escalates on failure, de-escalates on AD_ENDED.
 
 const ChannelState = {
   IDLE: 'IDLE',

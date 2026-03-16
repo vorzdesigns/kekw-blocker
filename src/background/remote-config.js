@@ -1,13 +1,5 @@
-/**
- * Remote Config — fetches updated config values from a remote JSON file.
- *
- * Checks periodically (default: every hour) for updated volatile values
- * (GQL hashes, operation names, client ID). Applies updates to the
- * in-memory TTV_CONFIG and broadcasts to content scripts.
- *
- * The remote URL should point to the raw remote-config.json in your repo.
- * Set it in storage or fall back to the default below.
- */
+// Remote config — fetches updated GQL hashes and client ID every hour.
+// URL overridable via chrome.storage.local key 'ttvRemoteConfigUrl'.
 
 const RemoteConfig = {
   // Default: GitHub raw URL. Replace 'YOUR_USERNAME/YOUR_REPO' with actual values.

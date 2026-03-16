@@ -1,6 +1,4 @@
-/**
- * Orchestrator — coordinates all layers and handles inter-layer communication.
- */
+// Orchestrator — coordinates layers and handles message passing.
 
 const Orchestrator = {
   _enabled: true,
@@ -17,15 +15,11 @@ const Orchestrator = {
     Badge.init();
     SegmentSub.init();
 
-    // Load saved options
     this._loadOptions();
-
-    // Block ad trigger URLs and tracking at the network level
     this._initTriggerBlocker();
 
     chrome.runtime.onMessage.addListener(this._onMessage.bind(this));
 
-    // Remote config auto-updater
     RemoteConfig.init();
 
     console.log('[TTV] Orchestrator initialized');

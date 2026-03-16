@@ -1,5 +1,3 @@
-// Options page — save/load settings via chrome.storage.local
-
 (function () {
   var DEFAULTS = {
     forcePlayerType: "popout",
@@ -39,11 +37,9 @@
       }
     }
     chrome.storage.local.set({ ttvOptions: opts });
-    // Notify background
     chrome.runtime.sendMessage({ type: "OPTIONS_UPDATED", options: opts });
   }
 
-  // Auto-save on change
   document.addEventListener("change", function (e) {
     if (KEYS.indexOf(e.target.id) !== -1) save();
   });

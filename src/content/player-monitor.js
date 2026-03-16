@@ -1,12 +1,4 @@
-/**
- * Content Script — Player Monitor
- *
- * Injected into twitch.tv pages. Responsibilities:
- * 1. Detect ad overlays / "Commercial Break" purple screens
- * 2. Auto-recover from purple screen by triggering player reload
- * 3. Hide ad-related UI elements and mute during ads
- * 4. Auto-claim channel points bonus
- */
+// Player monitor — ad overlay detection, purple screen recovery, channel points claim.
 
 (function () {
   "use strict";

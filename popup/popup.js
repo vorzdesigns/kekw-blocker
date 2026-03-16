@@ -1,4 +1,3 @@
-// Popup script — queries background for state and renders UI
 
 (function () {
   function render(data) {
@@ -99,7 +98,6 @@
     return div.innerHTML;
   }
 
-  // Query the background script
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
     if (!tabs || !tabs[0]) return;
     chrome.runtime.sendMessage({ type: "GET_POPUP_STATE", tabId: tabs[0].id }, function (response) {
