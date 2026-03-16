@@ -161,6 +161,9 @@
             preWarmBackupStreams(e.data.channelName, e.data.usherParams, e.data.v2api, workerRef);
           }
           else if (e.data.key == "UpdateAdBlockBanner") {
+            if (e.data.hasAds) {
+              showTtvNotification("KEKW Blocker: Blocking ads — stream quality may be temporarily reduced");
+            }
             // Forward ad blocking stats to content script via custom event
             window.dispatchEvent(new CustomEvent("ttv-" + _nonce + "-adblock-status", {
               detail: {
@@ -972,14 +975,17 @@
     var el = document.createElement("div");
     el.id = "ttv-kekw-notif";
     el.textContent = message;
-    el.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);" +
+    // Find the player container to anchor inside, fall back to body
+    var player = document.querySelector(".persistent-player") ||
+                 document.querySelector("[data-a-target='video-player']");
+    var useAbsolute = !!player;
+
+    el.style.cssText = "position:" + (useAbsolute ? "absolute" : "fixed") + ";" +
+      "top:12px;left:50%;transform:translateX(-50%);" +
       "background:rgba(14,14,16,0.85);color:#efeff1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
       "font-size:12px;font-weight:500;padding:6px 16px;border-radius:6px;z-index:999999;" +
       "pointer-events:none;opacity:0;transition:opacity 0.3s;";
 
-    // Find the player container to scope positioning, fall back to body
-    var player = document.querySelector(".persistent-player") ||
-                 document.querySelector("[data-a-target='video-player']");
     (player || document.body).appendChild(el);
 
     // Fade in
