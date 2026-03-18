@@ -1,5 +1,15 @@
 {
+  "scripts": {
+    "build:chrome": "node scripts/build.js chrome",
+    "build:firefox": "node scripts/build.js firefox",
+    "build:firefox:amo": "node scripts/build.js firefox-amo",
+    "package:firefox": "node scripts/build.js firefox --xpi",
+    "package:firefox:amo": "node scripts/build.js firefox-amo --xpi",
+    "package:source": "node scripts/package-source.js",
+    "lint:firefox:amo": "web-ext lint --source-dir dist/firefox-amo"
+  },
   "devDependencies": {
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "web-ext": "^10.0.0"
   }
 }

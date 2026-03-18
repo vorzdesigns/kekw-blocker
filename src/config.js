@@ -7,15 +7,36 @@
 var TTV_CONFIG = Object.freeze({
 
   // Version — bump when you change this file
-  _configVersion: "2026-03-15.1",
+  _configVersion: "2026-03-18.1",
 
   // GQL
   gql: Object.freeze({
-    _updated: "2026-03-15",
+    _updated: "2026-03-18",
 
     url: "https://gql.twitch.tv/gql",
     clientId: "b31o4btkqth5bzbvr9ub2ovr79umhh",
     playbackAccessTokenHash: "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
+  }),
+
+  remoteConfig: Object.freeze({
+    _updated: "2026-03-18",
+
+    defaultUrl: "https://dorquex-ctrl.github.io/kekw-blocker/remote-config.json",
+    pollIntervalMs: 60 * 60 * 1000,
+    acceleratedRetryMs: Object.freeze([
+      5 * 60 * 1000,
+      15 * 60 * 1000,
+    ]),
+    runtimeCandidateWindowMs: 6 * 60 * 60 * 1000,
+    runtimeCandidateThreshold: 3,
+    temporaryFallbackTtlMs: 24 * 60 * 60 * 1000,
+    signing: Object.freeze({
+      alg: "ed25519",
+      keyId: "k1",
+      publicKeys: Object.freeze({
+        k1: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAw6k0xNae+GfL6GFEnCqX73DeVeAJ/p/jRDz1s2/mZGw=\n-----END PUBLIC KEY-----\n",
+      }),
+    }),
   }),
 
   // HLS

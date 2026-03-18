@@ -1,107 +1,209 @@
 #!/usr/bin/env node
-/**
- * extract-config.js — Automated Twitch config extraction
- *
- * Fetches Twitch's production JS bundles and extracts volatile values:
- *   - PlaybackAccessToken persisted query hash
- *   - Client-ID
- *   - GQL operation names (ad-related)
- *   - Known CSS data-a-target selectors
- *
- * Usage:
- *   node scripts/extract-config.js              # check & print diff
- *   node scripts/extract-config.js --update     # write changes to remote-config.json
- *   node scripts/extract-config.js --ci         # exit code 1 if changes detected
- */
+"use strict";
 
-const https = require("https");
-const http = require("http");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
+const {
+  applyCandidates,
+  createValueRecord,
+  fetchText,
+  getBundledPlaybackAccessTokenQuery,
+  isValidClientId,
+  isValidHash,
+  isValidQuery,
+  normalizeV2Config,
+  signConfig,
+  validateClientId,
+  validateHash,
+  validateQuery
+} = require("./remote-config-v2");
+
 const REMOTE_CONFIG_PATH = path.resolve(__dirname, "..", "remote-config.json");
+const FAILURE_REPORT_PATH = path.resolve(__dirname, "..", "extraction-failure.json");
 const TWITCH_URL = "https://www.twitch.tv/";
 
-// ─── HTTP helpers ────────────────────────────────────────────────────────────
-
-function fetch(url, maxRedirects = 5) {
-  return new Promise((resolve, reject) => {
-    if (maxRedirects <= 0) return reject(new Error("Too many redirects"));
-    const mod = url.startsWith("https") ? https : http;
-    const req = mod.get(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return resolve(fetch(res.headers.location, maxRedirects - 1));
-      }
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-      const chunks = [];
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    });
-    req.on("error", reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error("Timeout: " + url)); });
-  });
-}
-
-// ─── Bundle discovery ────────────────────────────────────────────────────────
-
 async function discoverBundleUrls(html) {
-  // Twitch loads JS from static.twitchcdn.net or assets.twitch.tv
   const scriptPattern = /(?:src|href)=["'](https?:\/\/(?:static\.twitchcdn\.net|assets\.twitch\.tv)[^"']+\.js)["']/g;
+  const chunkPattern = /["'](https?:\/\/(?:static\.twitchcdn\.net|assets\.twitch\.tv)\/assets\/[^"']+\.js)["']/g;
   const urls = new Set();
   let match;
   while ((match = scriptPattern.exec(html)) !== null) {
     urls.add(match[1]);
   }
-
-  // Also check for dynamically-loaded chunk patterns in inline scripts
-  const chunkPattern = /["'](https?:\/\/(?:static\.twitchcdn\.net|assets\.twitch\.tv)\/assets\/[^"']+\.js)["']/g;
   while ((match = chunkPattern.exec(html)) !== null) {
     urls.add(match[1]);
   }
-
   return Array.from(urls);
 }
 
-// ─── Value extraction ────────────────────────────────────────────────────────
-
 function extractPlaybackAccessTokenHash(bundleText) {
-  // Pattern 1: persisted query definition near PlaybackAccessToken
-  // e.g., "PlaybackAccessToken"...sha256Hash:"<hash>"
   const patterns = [
-    // Direct association: operationName + sha256Hash nearby
     /PlaybackAccessToken[^}]{0,500}sha256Hash\s*:\s*["']([a-f0-9]{64})["']/,
     /sha256Hash\s*:\s*["']([a-f0-9]{64})["'][^}]{0,500}PlaybackAccessToken/,
-    // Persisted query object pattern
     /["']PlaybackAccessToken["']\s*[,:]\s*[^}]*?["']([a-f0-9]{64})["']/,
-    // operationName assignment near hash
-    /operationName\s*:\s*["']PlaybackAccessToken["'][^}]{0,800}sha256Hash\s*:\s*["']([a-f0-9]{64})["']/,
+    /operationName\s*:\s*["']PlaybackAccessToken["'][^}]{0,800}sha256Hash\s*:\s*["']([a-f0-9]{64})["']/
   ];
-
-  for (const pattern of patterns) {
-    const match = bundleText.match(pattern);
+  for (let i = 0; i < patterns.length; i++) {
+    const match = bundleText.match(patterns[i]);
     if (match) return match[1];
   }
   return null;
 }
 
 function extractClientId(bundleText) {
-  // Twitch Client-ID is typically a 30-char alphanumeric string
-  // Often appears near "Client-ID" header assignment
   const patterns = [
     /["']Client-ID["']\s*[,:]\s*["']([a-z0-9]{30,32})["']/i,
     /clientId\s*[=:]\s*["']([a-z0-9]{30,32})["']/,
-    /CLIENT_ID\s*[=:]\s*["']([a-z0-9]{30,32})["']/,
+    /CLIENT_ID\s*[=:]\s*["']([a-z0-9]{30,32})["']/
   ];
-
-  for (const pattern of patterns) {
-    const match = bundleText.match(pattern);
+  for (let i = 0; i < patterns.length; i++) {
+    const match = bundleText.match(patterns[i]);
     if (match) return match[1];
   }
   return null;
 }
 
+function extractPlaybackAccessTokenDocument(bundleText) {
+  const anchor = 'value:"PlaybackAccessToken"}';
+  const anchorIndex = bundleText.indexOf(anchor);
+  if (anchorIndex === -1) return null;
+
+  const start = bundleText.lastIndexOf('{kind:"Document"', anchorIndex);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let quote = "";
+  let escaped = false;
+
+  for (let i = start; i < bundleText.length; i++) {
+    const ch = bundleText[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) inString = false;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      continue;
+    }
+
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return bundleText.slice(start, i + 1);
+    }
+  }
+
+  return null;
+}
+
+function joinPrinted(parts, separator) {
+  return (parts || []).filter(Boolean).join(separator || "") || "";
+}
+
+function wrapPrinted(prefix, value, suffix) {
+  return value != null && value !== "" ? prefix + value + (suffix || "") : "";
+}
+
+function indentPrinted(value) {
+  return wrapPrinted("  ", value.replace(/\n/g, "\n  "));
+}
+
+function blockPrinted(parts) {
+  return wrapPrinted("{\n", indentPrinted(joinPrinted(parts, "\n")), "\n}");
+}
+
+function hasMultiline(parts) {
+  return parts != null && parts.some((part) => typeof part === "string" && part.includes("\n"));
+}
+
+function printGraphqlNode(node) {
+  switch (node.kind) {
+    case "Name":
+      return node.value;
+    case "Variable":
+      return "$" + printGraphqlNode(node.name);
+    case "Document":
+      return joinPrinted(node.definitions.map(printGraphqlNode), "\n\n") + "\n";
+    case "OperationDefinition": {
+      const op = node.operation;
+      const name = node.name ? printGraphqlNode(node.name) : "";
+      const vars = wrapPrinted("(", joinPrinted((node.variableDefinitions || []).map(printGraphqlNode), ", "), ")");
+      const directives = joinPrinted((node.directives || []).map(printGraphqlNode), " ");
+      const selectionSet = printGraphqlNode(node.selectionSet);
+      return name || directives || vars || op !== "query"
+        ? joinPrinted([op, joinPrinted([name, vars]), directives, selectionSet], " ")
+        : selectionSet;
+    }
+    case "VariableDefinition":
+      return printGraphqlNode(node.variable) + ": " + printGraphqlNode(node.type) +
+        wrapPrinted(" = ", node.defaultValue ? printGraphqlNode(node.defaultValue) : "") +
+        wrapPrinted(" ", joinPrinted((node.directives || []).map(printGraphqlNode), " "));
+    case "SelectionSet":
+      return blockPrinted((node.selections || []).map(printGraphqlNode));
+    case "Field": {
+      const alias = node.alias ? printGraphqlNode(node.alias) + ": " : "";
+      const name = printGraphqlNode(node.name);
+      const args = (node.arguments || []).map(printGraphqlNode);
+      const directives = joinPrinted((node.directives || []).map(printGraphqlNode), " ");
+      let head = alias + name + wrapPrinted("(", joinPrinted(args, ", "), ")");
+      if (head.length > 80 || hasMultiline(args)) {
+        head = alias + name + wrapPrinted("(\n", indentPrinted(joinPrinted(args, "\n")), "\n)");
+      }
+      return joinPrinted([head, directives, node.selectionSet ? printGraphqlNode(node.selectionSet) : ""], " ");
+    }
+    case "Argument":
+      return printGraphqlNode(node.name) + ": " + printGraphqlNode(node.value);
+    case "Directive":
+      return "@" + printGraphqlNode(node.name) +
+        wrapPrinted("(", joinPrinted((node.arguments || []).map(printGraphqlNode), ", "), ")");
+    case "NamedType":
+      return printGraphqlNode(node.name);
+    case "ListType":
+      return "[" + printGraphqlNode(node.type) + "]";
+    case "NonNullType":
+      return printGraphqlNode(node.type) + "!";
+    case "StringValue":
+      return JSON.stringify(node.value);
+    case "BooleanValue":
+      return node.value ? "true" : "false";
+    case "NullValue":
+      return "null";
+    case "EnumValue":
+      return node.value;
+    case "IntValue":
+    case "FloatValue":
+      return node.value;
+    case "ListValue":
+      return "[" + joinPrinted((node.values || []).map(printGraphqlNode), ", ") + "]";
+    case "ObjectValue":
+      return "{" + joinPrinted((node.fields || []).map(printGraphqlNode), ", ") + "}";
+    case "ObjectField":
+      return printGraphqlNode(node.name) + ": " + printGraphqlNode(node.value);
+    default:
+      throw new Error("Unsupported AST node kind: " + node.kind);
+  }
+}
+
+function derivePlaybackAccessTokenQuery(bundleText) {
+  try {
+    const documentLiteral = extractPlaybackAccessTokenDocument(bundleText);
+    if (!documentLiteral) return null;
+    const documentAst = Function('"use strict"; return (' + documentLiteral + ");")();
+    if (!documentAst || documentAst.kind !== "Document") return null;
+    return printGraphqlNode(documentAst);
+  } catch {
+    return null;
+  }
+}
+
 function extractSelectors(bundleText) {
-  // Extract data-a-target and data-test-selector values related to ads/player
   const selectorPattern = /data-(?:a-target|test-selector)=["']([^"']*(?:ad|commercial|overlay|player)[^"']*)["']/gi;
   const selectors = new Set();
   let match;
@@ -111,276 +213,247 @@ function extractSelectors(bundleText) {
   return Array.from(selectors).sort();
 }
 
-// ─── Live validation ────────────────────────────────────────────────────────
-// Instead of escalating to AI when regex can't find a value, probe Twitch's
-// GQL endpoint to check whether the current value still works. One small POST
-// vs an OpenAI call + bundle re-download.
-
-function validateHash(hash, clientId) {
-  return new Promise((resolve) => {
-    if (!hash || !clientId) return resolve(false);
-
-    const body = JSON.stringify({
-      operationName: "PlaybackAccessToken",
-      variables: { isLive: true, login: "twitch", isVod: false, vodID: "", playerType: "site" },
-      extensions: { persistedQuery: { version: 1, sha256Hash: hash } },
-    });
-
-    const req = https.request(
-      {
-        hostname: "gql.twitch.tv",
-        path: "/gql",
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Client-ID": clientId,
-        },
-        timeout: 10000,
-      },
-      (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          try {
-            const data = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            // PersistedQueryNotFound means the hash is stale
-            const items = Array.isArray(data) ? data : [data];
-            for (const item of items) {
-              if (item.errors) {
-                for (const err of item.errors) {
-                  if (err.message && err.message.includes("PersistedQueryNotFound")) {
-                    return resolve(false);
-                  }
-                }
-              }
-            }
-            // Any non-error response means the hash is accepted
-            resolve(true);
-          } catch {
-            resolve(false);
-          }
-        });
-      }
-    );
-    req.on("error", () => resolve(false));
-    req.on("timeout", () => { req.destroy(); resolve(false); });
-    req.write(body);
-    req.end();
-  });
-}
-
-// ─── Main extraction pipeline ────────────────────────────────────────────────
-
 async function extractConfig() {
   console.log("[extract] Fetching twitch.tv...");
-  const html = await fetch(TWITCH_URL);
+  const html = await fetchText(TWITCH_URL);
 
   console.log("[extract] Discovering JS bundles...");
   const bundleUrls = await discoverBundleUrls(html);
-  console.log(`[extract] Found ${bundleUrls.length} bundle(s)`);
+  console.log("[extract] Found " + bundleUrls.length + " bundle(s)");
 
-  if (bundleUrls.length === 0) {
-    throw new Error("No JS bundles found — Twitch may have changed their HTML structure");
+  if (!bundleUrls.length) {
+    throw new Error("No JS bundles found");
   }
 
-  // Fetch all bundles (limit concurrency to 5)
-  const results = {
-    playbackAccessTokenHash: null,
-    clientId: null,
-    discoveredSelectors: [],
-  };
-
   const allBundleText = [];
-
   for (let i = 0; i < bundleUrls.length; i += 5) {
     const batch = bundleUrls.slice(i, i + 5);
-    console.log(`[extract] Fetching bundles ${i + 1}-${Math.min(i + 5, bundleUrls.length)} of ${bundleUrls.length}...`);
-    const texts = await Promise.all(
-      batch.map((url) => fetch(url).catch((e) => { console.warn(`[extract] Failed to fetch ${url}: ${e.message}`); return ""; }))
-    );
-    allBundleText.push(...texts);
+    console.log("[extract] Fetching bundles " + (i + 1) + "-" + Math.min(i + 5, bundleUrls.length) + " of " + bundleUrls.length + "...");
+    const texts = await Promise.all(batch.map((url) => fetchText(url).catch((error) => {
+      console.warn("[extract] Failed to fetch " + url + ": " + error.message);
+      return "";
+    })));
+    allBundleText.push.apply(allBundleText, texts);
   }
 
   const combined = allBundleText.join("\n");
+  const directHash = extractPlaybackAccessTokenHash(combined);
+  const derivedQuery = derivePlaybackAccessTokenQuery(combined);
 
-  console.log("[extract] Extracting PlaybackAccessToken hash...");
-  results.playbackAccessTokenHash = extractPlaybackAccessTokenHash(combined);
-
-  console.log("[extract] Extracting Client-ID...");
-  results.clientId = extractClientId(combined);
-
-  console.log("[extract] Extracting ad-related selectors...");
-  results.discoveredSelectors = extractSelectors(combined);
-
-  results.bundleCount = bundleUrls.length;
-  return results;
+  return {
+    playbackAccessTokenHash: directHash || (derivedQuery ? crypto.createHash("sha256").update(derivedQuery).digest("hex") : null),
+    playbackAccessTokenHashSource: directHash ? "regex" : (derivedQuery ? "ast" : null),
+    playbackAccessTokenQuery: derivedQuery,
+    playbackAccessTokenQuerySource: derivedQuery ? "ast" : null,
+    clientId: extractClientId(combined),
+    clientIdSource: "regex",
+    discoveredSelectors: extractSelectors(combined),
+    bundleCount: bundleUrls.length
+  };
 }
-
-// ─── Diff + update logic ─────────────────────────────────────────────────────
 
 function loadCurrentConfig() {
   try {
-    return JSON.parse(fs.readFileSync(REMOTE_CONFIG_PATH, "utf-8"));
+    return JSON.parse(fs.readFileSync(REMOTE_CONFIG_PATH, "utf8"));
   } catch {
     return {};
   }
 }
 
-function computeDiff(current, extracted) {
-  const changes = [];
-
-  if (extracted.playbackAccessTokenHash && extracted.playbackAccessTokenHash !== current.playbackAccessTokenHash) {
-    changes.push({
-      field: "playbackAccessTokenHash",
-      old: current.playbackAccessTokenHash || "(not set)",
-      new: extracted.playbackAccessTokenHash,
-    });
-  }
-
-  if (extracted.clientId && extracted.clientId !== current.clientId) {
-    changes.push({
-      field: "clientId",
-      old: current.clientId || "(not set)",
-      new: extracted.clientId,
-    });
-  }
-
-  return changes;
+function buildFailureReport(failedFields, extracted, message, error) {
+  const report = {
+    timestamp: new Date().toISOString(),
+    failedFields: failedFields,
+    bundleCount: extracted && extracted.bundleCount || 0,
+    message: message
+  };
+  if (error) report.error = error;
+  return report;
 }
 
-function applyChanges(current, changes) {
-  const updated = { ...current };
-  for (const change of changes) {
-    updated[change.field] = change.new;
-  }
-  updated._lastChecked = new Date().toISOString();
-  updated._version = (current._version || 0) + 1;
-  updated._lastUpdateSource = "regex-extraction";
-  return updated;
+function writeFailureReport(report) {
+  fs.writeFileSync(FAILURE_REPORT_PATH, JSON.stringify(report, null, 2));
 }
 
-// ─── CLI ─────────────────────────────────────────────────────────────────────
+async function buildValidatedCandidates(extracted, currentNormalized, bundledQuery) {
+  const candidates = {};
+  const extractionNotes = [];
+  const candidateStatus = {
+    clientId: "missing",
+    playbackAccessTokenHash: "missing",
+    playbackAccessTokenQuery: "missing"
+  };
+
+  const currentClientId = currentNormalized.gql.clientId.active && currentNormalized.gql.clientId.active.value || "";
+  const currentHash = currentNormalized.gql.playbackAccessToken.hash.active && currentNormalized.gql.playbackAccessToken.hash.active.value || "";
+  const currentQuery = currentNormalized.gql.playbackAccessToken.query.active && currentNormalized.gql.playbackAccessToken.query.active.value || bundledQuery;
+
+  let candidateClientId = null;
+  if (isValidClientId(extracted.clientId)) {
+    const clientOk = await validateClientId(extracted.clientId, extracted.playbackAccessTokenHash || currentHash, extracted.playbackAccessTokenQuery || currentQuery);
+    if (clientOk) {
+      candidateClientId = createValueRecord(extracted.clientId, extracted.clientIdSource || "regex", "high");
+      candidates.clientId = candidateClientId;
+      candidateStatus.clientId = "validated";
+    } else {
+      candidateStatus.clientId = "invalid";
+      extractionNotes.push("clientId-validation-failed");
+    }
+  } else {
+    extractionNotes.push("clientId-missing");
+  }
+
+  const effectiveClientId = candidateClientId && candidateClientId.value || currentClientId;
+
+  if (isValidHash(extracted.playbackAccessTokenHash)) {
+    const hashOk = await validateHash(extracted.playbackAccessTokenHash, effectiveClientId);
+    if (hashOk) {
+      const confidence = extracted.playbackAccessTokenHashSource === "ast" ? "medium" : "high";
+      candidates.playbackAccessTokenHash = createValueRecord(
+        extracted.playbackAccessTokenHash,
+        extracted.playbackAccessTokenHashSource || "regex",
+        confidence
+      );
+      candidateStatus.playbackAccessTokenHash = "validated";
+    } else {
+      candidateStatus.playbackAccessTokenHash = "invalid";
+      extractionNotes.push("playbackAccessTokenHash-validation-failed");
+    }
+  } else {
+    extractionNotes.push("playbackAccessTokenHash-missing");
+  }
+
+  if (isValidQuery(extracted.playbackAccessTokenQuery)) {
+    const queryOk = await validateQuery(extracted.playbackAccessTokenQuery, effectiveClientId);
+    if (queryOk) {
+      const confidence = extracted.playbackAccessTokenQuerySource === "ast" ? "high" : "medium";
+      candidates.playbackAccessTokenQuery = createValueRecord(
+        extracted.playbackAccessTokenQuery,
+        extracted.playbackAccessTokenQuerySource || "ast",
+        confidence
+      );
+      candidateStatus.playbackAccessTokenQuery = "validated";
+    } else {
+      candidateStatus.playbackAccessTokenQuery = "invalid";
+      extractionNotes.push("playbackAccessTokenQuery-validation-failed");
+    }
+  } else {
+    extractionNotes.push("playbackAccessTokenQuery-missing");
+  }
+
+  return {
+    candidates: candidates,
+    extractionNotes: extractionNotes,
+    candidateStatus: candidateStatus
+  };
+}
+
+async function detectTrueFailures(validated, currentNormalized, bundledQuery) {
+  const failedFields = [];
+  const currentClientId = currentNormalized.gql.clientId.active && currentNormalized.gql.clientId.active.value;
+  const currentHash = currentNormalized.gql.playbackAccessToken.hash.active && currentNormalized.gql.playbackAccessToken.hash.active.value;
+  const currentQuery = currentNormalized.gql.playbackAccessToken.query.active && currentNormalized.gql.playbackAccessToken.query.active.value || bundledQuery;
+
+  if (validated.candidateStatus.clientId !== "validated") {
+    const clientOk = await validateClientId(currentClientId, currentHash, currentQuery);
+    if (!clientOk) failedFields.push("clientId");
+  }
+
+  if (validated.candidateStatus.playbackAccessTokenHash !== "validated") {
+    const hashOk = await validateHash(currentHash, currentClientId);
+    if (!hashOk) failedFields.push("playbackAccessTokenHash");
+  }
+
+  if (validated.candidateStatus.playbackAccessTokenQuery !== "validated") {
+    const queryOk = await validateQuery(currentQuery, currentClientId);
+    if (!queryOk) failedFields.push("playbackAccessTokenQuery");
+  }
+
+  return failedFields;
+}
+
+function ensureSigningKey() {
+  const privateKey = process.env.REMOTE_CONFIG_ED25519_PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error("REMOTE_CONFIG_ED25519_PRIVATE_KEY is required to write remote-config.json");
+  }
+  return {
+    privateKey: privateKey,
+    keyId: process.env.REMOTE_CONFIG_KEY_ID || "k1"
+  };
+}
 
 async function main() {
   const args = process.argv.slice(2);
-  const shouldUpdate = args.includes("--update");
+  const shouldWrite = args.includes("--update") || args.includes("--ci");
   const ciMode = args.includes("--ci");
 
   try {
+    const bundledQuery = getBundledPlaybackAccessTokenQuery();
     const extracted = await extractConfig();
     const current = loadCurrentConfig();
+    const currentNormalized = normalizeV2Config(current, bundledQuery);
+    const validated = await buildValidatedCandidates(extracted, currentNormalized, bundledQuery);
+    const applied = applyCandidates(current, validated.candidates, bundledQuery);
 
     console.log("\n[extract] Results:");
     console.log("  PlaybackAccessToken hash:", extracted.playbackAccessTokenHash || "NOT FOUND");
+    console.log("  PlaybackAccessToken query:", extracted.playbackAccessTokenQuery ? "FOUND" : "NOT FOUND");
     console.log("  Client-ID:", extracted.clientId || "NOT FOUND");
-    console.log("  Ad selectors found:", extracted.discoveredSelectors.length > 0 ? extracted.discoveredSelectors.join(", ") : "none");
-
-    const changes = computeDiff(current, extracted);
-
-    // Check for missing fields BEFORE early exit — even if no changes were
-    // detected, regex may have failed to find values entirely (null vs existing).
-    const missing = [];
-    if (!extracted.playbackAccessTokenHash) missing.push("playbackAccessTokenHash");
-    if (!extracted.clientId) missing.push("clientId");
-
-    if (changes.length === 0 && missing.length === 0) {
-      console.log("\n[extract] No changes detected. Config is up to date.");
-      process.exit(0);
+    console.log("  Ad selectors found:", extracted.discoveredSelectors.length ? extracted.discoveredSelectors.join(", ") : "none");
+    if (validated.extractionNotes.length) {
+      console.log("  Notes:", validated.extractionNotes.join(", "));
     }
 
-    if (changes.length > 0) {
-      console.log(`\n[extract] ${changes.length} change(s) detected:`);
-      for (const change of changes) {
-        console.log(`  ${change.field}: ${change.old} -> ${change.new}`);
+    if (applied.changed) {
+      console.log("\n[extract] Config update prepared:");
+      if (validated.candidates.clientId) {
+        console.log("  clientId ->", validated.candidates.clientId.value);
+      }
+      if (validated.candidates.playbackAccessTokenHash) {
+        console.log("  playbackAccessTokenHash ->", validated.candidates.playbackAccessTokenHash.value);
+      }
+      if (validated.candidates.playbackAccessTokenQuery) {
+        console.log("  playbackAccessTokenQuery -> updated");
       }
 
-      // Write any successful changes first, regardless of failures
-      if (shouldUpdate || ciMode) {
-        const updated = applyChanges(current, changes);
-        fs.writeFileSync(REMOTE_CONFIG_PATH, JSON.stringify(updated, null, 2) + "\n");
-        console.log(`\n[extract] Updated ${REMOTE_CONFIG_PATH}`);
+      if (shouldWrite) {
+        const signing = ensureSigningKey();
+        const signed = signConfig(applied.config, signing.privateKey, signing.keyId);
+        fs.writeFileSync(REMOTE_CONFIG_PATH, JSON.stringify(signed, null, 2) + "\n");
+        console.log("\n[extract] Updated " + REMOTE_CONFIG_PATH);
       } else {
         console.log("\n[extract] Run with --update to apply changes.");
       }
     }
 
-    if (missing.length > 0) {
-      console.warn(`\n[extract] WARNING: Regex could not find: ${missing.join(", ")}`);
-
-      // Before escalating to AI, validate whether the current values still work.
-      // One lightweight GQL probe saves an expensive AI call when the regex just
-      // can't find the value but the existing config is perfectly fine.
-      const effectiveClientId = extracted.clientId || current.clientId;
-      const effectiveHash = extracted.playbackAccessTokenHash || current.playbackAccessTokenHash;
-      const trueFailures = [];
-
-      if (!extracted.playbackAccessTokenHash && current.playbackAccessTokenHash) {
-        console.log("[extract] Validating current playbackAccessTokenHash against Twitch GQL...");
-        const hashOk = await validateHash(current.playbackAccessTokenHash, effectiveClientId);
-        if (hashOk) {
-          console.log("[extract] Current hash still valid — no escalation needed.");
-        } else {
-          console.warn("[extract] Current hash REJECTED by Twitch — escalation required.");
-          trueFailures.push("playbackAccessTokenHash");
-        }
-      } else if (!extracted.playbackAccessTokenHash) {
-        trueFailures.push("playbackAccessTokenHash");
+    const trueFailures = await detectTrueFailures(validated, currentNormalized, bundledQuery);
+    if (trueFailures.length) {
+      console.warn("\n[extract] Confirmed stale:", trueFailures.join(", "));
+      if (ciMode) {
+        writeFailureReport(buildFailureReport(
+          trueFailures,
+          extracted,
+          "Values confirmed stale via live validation. AI fallback needed."
+        ));
+        process.exit(2);
       }
-
-      if (!extracted.clientId && current.clientId) {
-        // If we got this far with a working GQL call above, the clientId is fine too.
-        // But if we didn't test it yet, do a quick probe.
-        console.log("[extract] Validating current clientId against Twitch GQL...");
-        const clientOk = await validateHash(effectiveHash, current.clientId);
-        if (clientOk) {
-          console.log("[extract] Current clientId still valid — no escalation needed.");
-        } else {
-          console.warn("[extract] Current clientId REJECTED by Twitch — escalation required.");
-          trueFailures.push("clientId");
-        }
-      } else if (!extracted.clientId) {
-        trueFailures.push("clientId");
-      }
-
-      if (trueFailures.length > 0) {
-        console.warn(`\n[extract] CONFIRMED stale: ${trueFailures.join(", ")}`);
-        console.warn("[extract] Escalating to AI fallback.");
-
-        if (ciMode) {
-          const failureReport = {
-            timestamp: new Date().toISOString(),
-            failedFields: trueFailures,
-            bundleCount: extracted.bundleCount,
-            message: "Values confirmed stale via live validation. AI fallback needed.",
-          };
-          fs.writeFileSync(
-            path.resolve(__dirname, "..", "extraction-failure.json"),
-            JSON.stringify(failureReport, null, 2)
-          );
-          process.exit(2); // Exit code 2 = extraction failure (triggers AI fallback)
-        }
-      } else {
-        console.log("\n[extract] All current values validated — regex miss is benign.");
-      }
+    } else if (!applied.changed) {
+      console.log("\n[extract] No effective config changes detected.");
     }
 
-    if (ciMode && changes.length > 0) {
-      process.exit(1); // Exit code 1 = changes written
+    if (ciMode && applied.changed) {
+      process.exit(1);
     }
-  } catch (e) {
-    console.error("[extract] Fatal error:", e.message);
-
-    if (ciMode) {
-      const failureReport = {
-        timestamp: new Date().toISOString(),
-        failedFields: ["all"],
-        error: e.message,
-        message: "Complete extraction failure. Twitch may be unreachable or fundamentally changed.",
-      };
-      fs.writeFileSync(
-        path.resolve(__dirname, "..", "extraction-failure.json"),
-        JSON.stringify(failureReport, null, 2)
-      );
+  } catch (error) {
+    console.error("[extract] Fatal error:", error.message);
+    if (process.argv.slice(2).includes("--ci")) {
+      writeFailureReport(buildFailureReport(
+        ["all"],
+        null,
+        "Complete extraction failure. Twitch may be unreachable or fundamentally changed.",
+        error.message
+      ));
       process.exit(2);
     }
     process.exit(1);

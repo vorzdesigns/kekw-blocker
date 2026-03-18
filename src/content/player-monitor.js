@@ -28,7 +28,7 @@
     _cachedPathname = pathname;
     var match = pathname.match(/^\/([a-zA-Z0-9_]+)/);
     var reserved = TTV_CONFIG.routing.reservedPaths;
-    if (match && reserved.indexOf(match[1]) === -1) {
+    if (match && reserved.indexOf(match[1].toLowerCase()) === -1) {
       _cachedChannel = match[1].toLowerCase();
     } else {
       _cachedChannel = null;
@@ -57,7 +57,12 @@
         window.dispatchEvent(new CustomEvent("ttv-" + _ttvNonce + "-notify", {
           detail: { message: "KEKW Blocker: Recovering from commercial break" }
         }));
-        window.dispatchEvent(new CustomEvent("ttv-" + _ttvNonce + "-reload"));
+        window.dispatchEvent(new CustomEvent("ttv-" + _ttvNonce + "-reload", {
+          detail: {
+            reason: "purple-screen",
+            bypassCooldown: true
+          }
+        }));
         // Also notify background
         chrome.runtime.sendMessage({
           type: "PURPLE_SCREEN_DETECTED",
@@ -107,8 +112,8 @@
   function restoreVideo() {
     var video = document.querySelector("video");
     if (video && video._ttvMuted) {
-      video.muted = video._ttvOrigMuted || false;
-      video.volume = video._ttvOrigVolume || 1;
+      video.muted = !!video._ttvOrigMuted;
+      video.volume = typeof video._ttvOrigVolume === "number" ? video._ttvOrigVolume : 1;
       video._ttvMuted = false;
     }
   }
@@ -117,13 +122,6 @@
 
   var CLAIM_INTERVAL_MS = 2000;
   var autoClaimEnabled = true;
-
-  // Load option from storage
-  chrome.storage.local.get("ttvOptions", function (result) {
-    if (result && result.ttvOptions && result.ttvOptions.autoClaimPoints !== undefined) {
-      autoClaimEnabled = !!result.ttvOptions.autoClaimPoints;
-    }
-  });
 
   function claimChannelPoints() {
     if (!autoClaimEnabled) return;
@@ -184,6 +182,19 @@
 
   // --- Init ---
 
+  function loadStartupState(callback) {
+    chrome.storage.local.get(["ttvOptions", "ttvEnabled"], function (result) {
+      var opts = result && result.ttvOptions || {};
+      if (opts.autoClaimPoints !== undefined) {
+        autoClaimEnabled = !!opts.autoClaimPoints;
+      }
+      if (result && typeof result.ttvEnabled === "boolean") {
+        adBlockingEnabled = result.ttvEnabled;
+      }
+      callback();
+    });
+  }
+
   function init() {
     // Debounced ad check — coalesces rapid MutationObserver callbacks
     var adCheckPending = false;
@@ -239,8 +250,10 @@
   }
 
   if (document.body) {
-    init();
+    loadStartupState(init);
   } else {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", function () {
+      loadStartupState(init);
+    });
   }
 })();

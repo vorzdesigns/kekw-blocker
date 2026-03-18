@@ -28,6 +28,9 @@ jobs:
 
       - name: Run config extraction
         id: extract
+        env:
+          REMOTE_CONFIG_ED25519_PRIVATE_KEY: ${{ secrets.REMOTE_CONFIG_ED25519_PRIVATE_KEY }}
+          REMOTE_CONFIG_KEY_ID: k1
         run: |
           set +e
           node scripts/extract-config.js --ci
@@ -106,7 +109,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           # Build a focused excerpt: lines near relevant keywords
-          grep -n -i -C 2 'PlaybackAccessToken\|sha256Hash\|Client-ID\|clientId' /tmp/bundle_combined.txt | cut -c1-2000 | head -200 | head -c 500000 > /tmp/bundle_excerpt.txt
+          grep -n -i -C 2 'PlaybackAccessToken\|sha256Hash\|Client-ID\|clientId\|streamPlaybackAccessToken\|videoPlaybackAccessToken' /tmp/bundle_combined.txt | cut -c1-2000 | head -200 | head -c 500000 > /tmp/bundle_excerpt.txt
 
           # Call OpenAI via a self-contained Node script that reads files directly
           node -e "
@@ -117,7 +120,7 @@ jobs:
             const failedFields = failureReport.failedFields.join(', ');
             const excerpt = fs.readFileSync('/tmp/bundle_excerpt.txt', 'utf8');
 
-            const prompt = 'You are analyzing minified Twitch.tv JavaScript bundles to extract configuration values for a Twitch ad-blocker extension.\n\nI need you to find these values that our regex extraction failed to locate:\nFailed fields: ' + failedFields + '\n\nHere are relevant excerpts from Twitch JS bundles (lines near keywords):\n\n' + excerpt + '\n\nFor each field, respond ONLY with valid JSON in this exact format (no markdown, no explanation):\n{\n  \"playbackAccessTokenHash\": \"<64-char hex string or null if not found>\",\n  \"clientId\": \"<30-32 char alphanumeric string or null if not found>\",\n  \"confidence\": \"high|medium|low\",\n  \"notes\": \"<brief explanation of where you found the values>\"\n}';
+            const prompt = 'You are analyzing minified Twitch.tv JavaScript bundles to extract configuration values for a Twitch ad-blocker extension.\n\nI need you to find these values that our regex extraction failed to locate:\nFailed fields: ' + failedFields + '\n\nHere are relevant excerpts from Twitch JS bundles (lines near keywords):\n\n' + excerpt + '\n\nFor each field, respond ONLY with valid JSON in this exact format (no markdown, no explanation):\n{\n  \"playbackAccessTokenHash\": \"<64-char hex string or null if not found>\",\n  \"playbackAccessTokenQuery\": \"<full PlaybackAccessToken GraphQL query string or null if not found>\",\n  \"clientId\": \"<30-32 char alphanumeric string or null if not found>\",\n  \"confidence\": \"high|medium|low\",\n  \"notes\": \"<brief explanation of where you found the values>\"\n}';
 
             const body = JSON.stringify({
               model: 'gpt-5-mini',
@@ -156,6 +159,7 @@ jobs:
           "
 
       - name: Validate and apply AI results
+        if: ${{ false }}
         run: |
           node -e "
             const fs = require('fs');
@@ -210,6 +214,17 @@ jobs:
               console.log('AI found no new values to update');
             }
           "
+
+      - name: Validate and apply signed AI results
+        env:
+          REMOTE_CONFIG_ED25519_PRIVATE_KEY: ${{ secrets.REMOTE_CONFIG_ED25519_PRIVATE_KEY }}
+          REMOTE_CONFIG_KEY_ID: k1
+          AI_FALLBACK_SHOULD_OPEN_ISSUE_FILE: /tmp/should_open_issue
+        run: |
+          node scripts/apply-ai-config.js /tmp/ai_result.json || {
+            echo "true" > /tmp/should_open_issue
+            exit 1
+          }
 
       - name: Commit AI-updated config
         run: |

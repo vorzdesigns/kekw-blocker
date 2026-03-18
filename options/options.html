@@ -80,6 +80,76 @@ select:focus-visible { outline: 2px solid #e07a3a; outline-offset: 2px; }
   letter-spacing: 0.5px;
   margin-top: 20px;
 }
+.debug-card {
+  background: #1e1e1e;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
+  padding: 14px;
+  box-shadow: 4px 4px 0 #d4d4d4;
+}
+.debug-grid {
+  display: grid;
+  grid-template-columns: minmax(110px, 140px) 1fr;
+  gap: 8px 12px;
+  font-size: 12px;
+}
+.debug-label {
+  color: #888;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.debug-value {
+  word-break: break-word;
+  font-family: Consolas, Monaco, monospace;
+}
+.button-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.action-btn {
+  background: #e07a3a;
+  color: #121212;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #d4d4d4;
+}
+.action-btn.secondary {
+  background: #2a2a2a;
+  color: #d4d4d4;
+}
+.action-btn:focus-visible {
+  outline: 2px solid #e07a3a;
+  outline-offset: 2px;
+}
+.status-note {
+  margin-top: 12px;
+  color: #888;
+  font-size: 11px;
+  min-height: 16px;
+}
+.debug-raw {
+  margin-top: 14px;
+  background: #121212;
+  border: 2px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #b7b7b7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
 </style>
 </head>
 <body>
@@ -142,6 +212,37 @@ select:focus-visible { outline: 2px solid #e07a3a; outline-offset: 2px; }
       <div class="option-desc">Show status banners on the stream when blocking ads or recovering</div>
     </div>
     <label class="toggle"><input type="checkbox" id="showNotifications" aria-label="Show notifications" checked><span class="toggle-slider"></span></label>
+  </div>
+
+  <h2>Debug</h2>
+  <div class="debug-card">
+    <div class="debug-grid">
+      <div class="debug-label">Source</div>
+      <div class="debug-value" id="debugSource">Loading...</div>
+      <div class="debug-label">Schema / Version</div>
+      <div class="debug-value" id="debugSchemaVersion">Loading...</div>
+      <div class="debug-label">Client ID</div>
+      <div class="debug-value" id="debugClientId">Loading...</div>
+      <div class="debug-label">Active Hash</div>
+      <div class="debug-value" id="debugHash">Loading...</div>
+      <div class="debug-label">Query Source</div>
+      <div class="debug-value" id="debugQuerySource">Loading...</div>
+      <div class="debug-label">Signature</div>
+      <div class="debug-value" id="debugSignature">Loading...</div>
+      <div class="debug-label">Last Fetch</div>
+      <div class="debug-value" id="debugLastFetch">Loading...</div>
+      <div class="debug-label">Last Known Good</div>
+      <div class="debug-value" id="debugLastKnownGood">Loading...</div>
+      <div class="debug-label">Temp Fallbacks</div>
+      <div class="debug-value" id="debugTempFallbacks">Loading...</div>
+    </div>
+    <div class="button-row">
+      <button type="button" class="action-btn secondary" id="refreshDebug">Refresh Debug</button>
+      <button type="button" class="action-btn secondary" id="resetRuntimeLearning">Reset Runtime Learning</button>
+      <button type="button" class="action-btn secondary" id="resetSignedCache">Reset Signed Cache</button>
+    </div>
+    <div class="status-note" id="debugStatus"></div>
+    <pre class="debug-raw" id="debugRaw">Loading...</pre>
   </div>
 
   <div class="save-note">Settings are saved automatically</div>

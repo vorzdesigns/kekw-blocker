@@ -40,8 +40,10 @@ const Badge = {
   },
 
   recordBlock(type, channelName) {
-    this._stats.totalAdsBlocked++;
-    this._lifetime.totalAdsBlocked++;
+    if (type !== 'tracking') {
+      this._stats.totalAdsBlocked++;
+      this._lifetime.totalAdsBlocked++;
+    }
     if (type === 'segment') {
       this._stats.segmentsRedirected++; this._lifetime.segmentsRedirected++;
       this._stats.timeSavedMs += 5000; this._lifetime.timeSavedMs += 5000; // ~5s per segment
@@ -107,6 +109,15 @@ const Badge = {
     return this._tabChannels.get(tabId) || null;
   },
 
+  _channelFromUrl(url) {
+    if (!url || !url.includes('twitch.tv/')) return null;
+    const match = url.match(/twitch\.tv\/([a-zA-Z0-9_]+)/);
+    if (!match) return null;
+    const channel = match[1].toLowerCase();
+    const reserved = TTV_CONFIG.routing.reservedPaths;
+    return reserved.indexOf(channel) === -1 ? channel : null;
+  },
+
   _debounceSave() {
     if (this._saveTimer) return;
     this._saveTimer = setTimeout(() => {
@@ -140,6 +151,12 @@ const Badge = {
   init() {
     this._loadLifetime();
 
+    chrome.tabs.query({ url: '*://*.twitch.tv/*' }, (tabs) => {
+      for (var i = 0; i < tabs.length; i++) {
+        this.setTabChannel(tabs[i].id, this._channelFromUrl(tabs[i].url));
+      }
+    });
+
     chrome.tabs.onRemoved.addListener((tabId) => {
       this._tabChannels.delete(tabId);
     });
@@ -147,14 +164,9 @@ const Badge = {
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.url || changeInfo.status === 'complete') {
         const url = changeInfo.url || (tab && tab.url);
-        if (url && url.includes('twitch.tv/')) {
-          const match = url.match(/twitch\.tv\/([a-zA-Z0-9_]+)/);
-          const reserved = TTV_CONFIG.routing.reservedPaths;
-          if (match && reserved.indexOf(match[1].toLowerCase()) === -1) {
-            this.setTabChannel(tabId, match[1].toLowerCase());
-          } else {
-            this.setTabChannel(tabId, null);
-          }
+        const channel = this._channelFromUrl(url);
+        if (channel) {
+          this.setTabChannel(tabId, channel);
         } else if (url && this._tabChannels.has(tabId)) {
           this.setTabChannel(tabId, null);
         }
