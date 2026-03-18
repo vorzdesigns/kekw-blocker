@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "KEKW Blocker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Twitch ad blocker with self-healing config",
   "permissions": [
     "webRequest",

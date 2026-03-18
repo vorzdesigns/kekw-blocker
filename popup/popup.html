@@ -6,143 +6,175 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   width: 300px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #0e0e10;
-  color: #efeff1;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #121212;
+  color: #d4d4d4;
   padding: 16px;
 }
+
 .header {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #2f2f35;
+  border-bottom: 2px solid #d4d4d4;
 }
-.header img { width: 24px; height: 24px; }
-.header h1 { font-size: 14px; font-weight: 600; }
-.header .version { color: #adadb8; font-size: 11px; margin-left: auto; }
-.header .settings-btn { background: none; border: none; color: #adadb8; cursor: pointer; padding: 4px; margin-left: 8px; }
-.header .settings-btn:hover { color: #efeff1; }
+.header img {
+  width: 36px;
+  height: 36px;
+}
+.header h1 {
+  font-size: 17px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.header .version {
+  color: #999;
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: auto;
+}
+.header .settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
+  padding: 4px;
+  margin-left: 4px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #d4d4d4;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.header .settings-btn:hover {
+  background: #e07a3a;
+  box-shadow: 2px 2px 0 #d4d4d4;
+}
 
 .status-card {
-  background: #18181b;
-  border-radius: 8px;
+  background: #1e1e1e;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
   padding: 12px;
   margin-bottom: 12px;
+  box-shadow: 4px 4px 0 #d4d4d4;
 }
 .status-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
+  padding: 3px 0;
 }
-.status-label { color: #adadb8; font-size: 12px; }
-.status-value { font-size: 13px; font-weight: 500; }
-
-.dot {
-  display: inline-block;
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-.dot-green { background: #4CAF50; }
-@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-.dot-orange { background: #FF9800; animation: pulse 1.5s ease-in-out infinite; }
-.dot-red { background: #F44336; }
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.stat-box {
-  background: #18181b;
-  border-radius: 8px;
-  padding: 10px;
-  text-align: center;
-}
-.stat-number {
-  font-size: 20px;
+.status-label {
+  color: #777;
+  font-size: 11px;
   font-weight: 700;
-  color: #bf94ff;
-}
-.stat-label {
-  font-size: 10px;
-  color: #adadb8;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-top: 2px;
 }
+.status-value {
+  font-size: 13px;
+  font-weight: 700;
+}
+.status-enabled { color: #7ec88b; }
+.status-blocking { color: #e07a3a; }
+.status-disabled { color: #777; }
 
 .toggle-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #18181b;
-  border-radius: 8px;
+  background: #1e1e1e;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
   padding: 10px 12px;
+  box-shadow: 4px 4px 0 #d4d4d4;
 }
-.toggle-label { font-size: 13px; }
+.toggle-label {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 .toggle {
   position: relative;
-  width: 36px; height: 20px;
+  width: 44px;
+  height: 24px;
   cursor: pointer;
 }
 .toggle input { opacity: 0; position: absolute; width: 0; height: 0; }
 .toggle-slider {
   position: absolute;
   inset: 0;
-  background: #3a3a3d;
-  border-radius: 10px;
-  transition: 0.2s;
+  background: #2a2a2a;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
+  transition: 0.15s;
 }
 .toggle-slider::before {
   content: '';
   position: absolute;
-  width: 16px; height: 16px;
-  left: 2px; bottom: 2px;
-  background: white;
-  border-radius: 50%;
-  transition: 0.2s;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #555;
+  border-radius: 2px;
+  transition: 0.15s;
 }
-.toggle input:checked + .toggle-slider { background: #bf94ff; }
-.toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+.toggle input:checked + .toggle-slider {
+  background: #e07a3a;
+  border-color: #d4d4d4;
+}
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(20px) translateY(-50%);
+  background: #d4d4d4;
+}
+.toggle input:focus-visible + .toggle-slider {
+  outline: 2px solid #e07a3a;
+  outline-offset: 2px;
+}
 
-.section-label {
-  font-size: 10px;
-  color: #adadb8;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-  margin-top: 4px;
-}
 .no-channel {
   text-align: center;
-  padding: 20px;
-  color: #adadb8;
-  font-size: 13px;
+  padding: 24px 12px;
+  color: #777;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
+
 .donate-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: 100%;
-  margin-top: 12px;
-  padding: 8px;
-  background: #ff5e5b;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  border: none;
-  border-radius: 8px;
+  margin-top: 14px;
+  padding: 9px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 2px solid #d4d4d4;
+  border-radius: 4px;
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.2s;
+  box-shadow: 3px 3px 0 #e07a3a;
+  transition: background 0.15s, box-shadow 0.15s;
 }
-.donate-btn:hover { background: #e04e4b; }
+.donate-btn:hover {
+  background: #e07a3a;
+  box-shadow: 3px 3px 0 #d4d4d4;
+}
 .donate-btn svg { flex-shrink: 0; }
 </style>
 </head>
@@ -152,7 +184,7 @@ body {
     <h1>KEKW Blocker</h1>
     <span class="version">v1.0.2</span>
     <button class="settings-btn" id="openSettings" title="Settings" aria-label="Open settings">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87a.48.48 0 00.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87a.48.48 0 00.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
     </button>
   </div>
 
@@ -161,7 +193,7 @@ body {
   </div>
 
   <a class="donate-btn" href="https://ko-fi.com/dorquex" target="_blank" rel="noopener noreferrer">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="white"/></svg>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor"/></svg>
     Support KEKW Blocker
   </a>
 

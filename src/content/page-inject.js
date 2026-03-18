@@ -183,9 +183,26 @@
             if (e.data.hasAds) {
               showTtvNotification("KEKW Blocker: Ads blocked");
             } else if (!e.data.hasAds && _isBlockingAds) {
-              // Restore pre-ad quality
+              // Restore pre-ad quality if the tier still exists on this stream
               if (_preAdQuality && _lsCachedValues) {
-                _lsCachedValues.set("video-quality", _preAdQuality);
+                var shouldRestore = true;
+                try {
+                  var ps = getPlayerAndState();
+                  if (ps && ps.player && ps.player.core && ps.player.core.state &&
+                      ps.player.core.state.quality && ps.player.core.state.quality.group) {
+                    var savedObj = JSON.parse(_preAdQuality);
+                    var savedTier = savedObj && savedObj.default;
+                    var currentTier = ps.player.core.state.quality.group;
+                    if (savedTier && currentTier && savedTier !== currentTier) {
+                      console.log("[TTV] Skipping quality restore: saved=" + savedTier +
+                        " current=" + currentTier + " (tier may not be available)");
+                      shouldRestore = false;
+                    }
+                  }
+                } catch (_qErr) {}
+                if (shouldRestore) {
+                  _lsCachedValues.set("video-quality", _preAdQuality);
+                }
               }
               _preAdQuality = null;
             }
@@ -1147,6 +1164,48 @@
     return false;
   }
 
+  // Early buffer recovery via native stalled/waiting events
+  var _mediaEventVideo = null;
+
+  function onMediaStallOrWait(evt) {
+    if (!_bufferingFixEnabled || !playerForMonitoringBuffering) return;
+    var now = Date.now();
+    if (now - playerBufferState.lastFixTime < BUFFERING_MIN_REPEAT_DELAY) return;
+    try {
+      var player = playerForMonitoringBuffering.player;
+      if (!player.core || player.isPaused()) return;
+      var state = playerForMonitoringBuffering.state;
+      if (!state || !state.props || !state.props.content || state.props.content.type !== "live") return;
+      if (!playerBufferState.hasStreamStarted) return;
+      var bufferDuration = player.getBufferDuration();
+      if (!(bufferDuration <= BUFFERING_DANGER_ZONE)) return;
+      console.log("[TTV] Media " + evt.type + " — buffer=" + bufferDuration.toFixed(2) + "s, seeking to live");
+      playerBufferState.lastFixTime = now;
+      playerBufferState.numSame = 0;
+      if (!seekToLiveEdge(player)) {
+        doTwitchPlayerTask(true, false);
+      }
+    } catch (e) {}
+  }
+
+  function attachMediaEventListeners(videoEl) {
+    if (_mediaEventVideo === videoEl) return;
+    detachMediaEventListeners();
+    if (!videoEl) return;
+    videoEl.addEventListener("stalled", onMediaStallOrWait);
+    videoEl.addEventListener("waiting", onMediaStallOrWait);
+    _mediaEventVideo = videoEl;
+  }
+
+  function detachMediaEventListeners() {
+    if (!_mediaEventVideo) return;
+    try {
+      _mediaEventVideo.removeEventListener("stalled", onMediaStallOrWait);
+      _mediaEventVideo.removeEventListener("waiting", onMediaStallOrWait);
+    } catch (e) {}
+    _mediaEventVideo = null;
+  }
+
   function monitorPlayerBuffering() {
     if (!_bufferingFixEnabled) {
       setTimeout(monitorPlayerBuffering, BUFFERING_DELAY);
@@ -1158,6 +1217,7 @@
         var state = playerForMonitoringBuffering.state;
         if (!player.core) {
           playerForMonitoringBuffering = null;
+          detachMediaEventListeners();
         } else if (state.props && state.props.content && state.props.content.type === "live" &&
                    !player.isPaused() && !(player.getHTMLVideoElement() && player.getHTMLVideoElement().ended) &&
                    playerBufferState.lastFixTime <= Date.now() - BUFFERING_MIN_REPEAT_DELAY) {
@@ -1241,12 +1301,15 @@
         }
       } catch (err) {
         playerForMonitoringBuffering = null;
+        detachMediaEventListeners();
       }
     }
     if (!playerForMonitoringBuffering) {
       var ps = getPlayerAndState();
       if (ps && ps.player && ps.state) {
         playerForMonitoringBuffering = { player: ps.player, state: ps.state };
+        var videoEl = ps.player.getHTMLVideoElement ? ps.player.getHTMLVideoElement() : null;
+        attachMediaEventListeners(videoEl);
       }
     }
     setTimeout(monitorPlayerBuffering, BUFFERING_DELAY);
