@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const {
@@ -45,21 +46,29 @@ async function main() {
   const currentHash = currentNormalized.gql.playbackAccessToken.hash.active && currentNormalized.gql.playbackAccessToken.hash.active.value || "";
   const currentQuery = currentNormalized.gql.playbackAccessToken.query.active && currentNormalized.gql.playbackAccessToken.query.active.value || bundledQuery;
   const candidates = {};
+  const aiQuery = isValidQuery(aiResult.playbackAccessTokenQuery) ? aiResult.playbackAccessTokenQuery : "";
+  const aiHash = isValidHash(aiResult.playbackAccessTokenHash)
+    ? aiResult.playbackAccessTokenHash
+    : (aiQuery ? crypto.createHash("sha256").update(aiQuery).digest("hex") : "");
+  const aiSource = isValidHash(aiResult.playbackAccessTokenHash) ? "ai" : (aiQuery ? "ai-derived" : "ai");
 
-  if (isValidClientId(aiResult.clientId) && await validateClientId(aiResult.clientId, aiResult.playbackAccessTokenHash || currentHash, aiResult.playbackAccessTokenQuery || currentQuery)) {
+  if (isValidClientId(aiResult.clientId) && await validateClientId(aiResult.clientId, aiHash || currentHash, aiQuery || currentQuery)) {
     candidates.clientId = createValueRecord(aiResult.clientId, "ai", aiResult.confidence === "medium" ? "medium" : "high");
   }
 
   const effectiveClientId = candidates.clientId && candidates.clientId.value || currentClientId;
-  if (isValidHash(aiResult.playbackAccessTokenHash) && await validateHash(aiResult.playbackAccessTokenHash, effectiveClientId)) {
-    candidates.playbackAccessTokenHash = createValueRecord(aiResult.playbackAccessTokenHash, "ai", aiResult.confidence === "medium" ? "medium" : "high");
+  if (isValidHash(aiHash) && await validateHash(aiHash, effectiveClientId)) {
+    candidates.playbackAccessTokenHash = createValueRecord(aiHash, aiSource, aiResult.confidence === "medium" ? "medium" : "high");
   }
-  if (isValidQuery(aiResult.playbackAccessTokenQuery) && await validateQuery(aiResult.playbackAccessTokenQuery, effectiveClientId)) {
-    candidates.playbackAccessTokenQuery = createValueRecord(aiResult.playbackAccessTokenQuery, "ai", aiResult.confidence === "medium" ? "medium" : "high");
+  if (isValidQuery(aiQuery) && await validateQuery(aiQuery, effectiveClientId)) {
+    candidates.playbackAccessTokenQuery = createValueRecord(aiQuery, "ai", aiResult.confidence === "medium" ? "medium" : "high");
   }
 
   const applied = applyCandidates(current, candidates, bundledQuery);
   if (!applied.changed) {
+    if (SHOULD_OPEN_ISSUE_PATH) {
+      fs.writeFileSync(SHOULD_OPEN_ISSUE_PATH, "true");
+    }
     console.log("AI found no validated updates to apply");
     process.exit(0);
   }

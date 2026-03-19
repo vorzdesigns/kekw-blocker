@@ -84,33 +84,21 @@ jobs:
         with:
           name: extraction-failure
 
-      - name: Fetch Twitch bundles for AI analysis
-        id: bundles
+      - name: Build AI fallback context
+        id: ai-context
         run: |
-          # Grab the main page and extract bundle URLs
-          HTML=$(curl -sL https://www.twitch.tv/)
-          URLS=$(echo "$HTML" | grep -oP 'https?://(?:static\.twitchcdn\.net|assets\.twitch\.tv)[^"'"'"']+\.js' | sort -u | head -10)
+          node scripts/build-ai-fallback-context.js \
+            --report extraction-failure.json \
+            --text-out /tmp/ai_context.txt \
+            --json-out /tmp/ai_context.json
 
-          # Download bundles (first 10, truncate each to 200KB to stay under token limits)
-          mkdir -p /tmp/bundles
-          i=0
-          for url in $URLS; do
-            curl -sL "$url" | head -c 200000 > "/tmp/bundles/bundle_$i.js"
-            i=$((i+1))
-          done
-
-          # Combine into a single context file
-          cat /tmp/bundles/*.js > /tmp/bundle_combined.txt
-          BUNDLE_SIZE=$(wc -c < /tmp/bundle_combined.txt)
-          echo "bundle_size=$BUNDLE_SIZE" >> "$GITHUB_OUTPUT"
+          CONTEXT_SIZE=$(wc -c < /tmp/ai_context.txt)
+          echo "context_size=$CONTEXT_SIZE" >> "$GITHUB_OUTPUT"
 
       - name: Ask AI to extract config values
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          # Build a focused excerpt: lines near relevant keywords
-          grep -n -i -C 2 'PlaybackAccessToken\|sha256Hash\|Client-ID\|clientId\|streamPlaybackAccessToken\|videoPlaybackAccessToken' /tmp/bundle_combined.txt | cut -c1-2000 | head -200 | head -c 500000 > /tmp/bundle_excerpt.txt
-
           # Call OpenAI via a self-contained Node script that reads files directly
           node -e "
             const https = require('https');
@@ -118,9 +106,9 @@ jobs:
 
             const failureReport = JSON.parse(fs.readFileSync('extraction-failure.json', 'utf8'));
             const failedFields = failureReport.failedFields.join(', ');
-            const excerpt = fs.readFileSync('/tmp/bundle_excerpt.txt', 'utf8');
+            const context = fs.readFileSync('/tmp/ai_context.txt', 'utf8');
 
-            const prompt = 'You are analyzing minified Twitch.tv JavaScript bundles to extract configuration values for a Twitch ad-blocker extension.\n\nI need you to find these values that our regex extraction failed to locate:\nFailed fields: ' + failedFields + '\n\nHere are relevant excerpts from Twitch JS bundles (lines near keywords):\n\n' + excerpt + '\n\nFor each field, respond ONLY with valid JSON in this exact format (no markdown, no explanation):\n{\n  \"playbackAccessTokenHash\": \"<64-char hex string or null if not found>\",\n  \"playbackAccessTokenQuery\": \"<full PlaybackAccessToken GraphQL query string or null if not found>\",\n  \"clientId\": \"<30-32 char alphanumeric string or null if not found>\",\n  \"confidence\": \"high|medium|low\",\n  \"notes\": \"<brief explanation of where you found the values>\"\n}';
+            const prompt = 'You are analyzing Twitch.tv JavaScript bundle context to recover configuration values for a Twitch ad-blocker extension.\n\nThe primary extractor already confirmed that these fields are stale or unrecoverable:\nFailed fields: ' + failedFields + '\n\nYou will receive:\n- the current signed remote config values\n- a summary of locally derived bundle candidates\n- explicit snippet windows cut around likely Twitch GraphQL / persisted-query markers\n\nImportant instructions:\n- Prefer exact values that are directly supported by the provided snippets.\n- If you can recover the full PlaybackAccessToken query text but not the persisted-query hash, return the query and set playbackAccessTokenHash to null. We can derive and validate a candidate hash locally.\n- Only return high confidence when the value is directly present in the snippets or clearly reconstructed from the provided AST/query context.\n- If the evidence is weak or missing, return nulls and use low confidence.\n\nContext:\n' + context + '\n\nRespond ONLY with valid JSON in this exact format (no markdown, no explanation):\n{\n  \"playbackAccessTokenHash\": \"<64-char hex string or null if not found>\",\n  \"playbackAccessTokenQuery\": \"<full PlaybackAccessToken GraphQL query string or null if not found>\",\n  \"clientId\": \"<30-32 char alphanumeric string or null if not found>\",\n  \"confidence\": \"high|medium|low\",\n  \"notes\": \"<brief explanation of where you found the values>\"\n}';
 
             const body = JSON.stringify({
               model: 'gpt-5-mini',
