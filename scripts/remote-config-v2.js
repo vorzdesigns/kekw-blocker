@@ -378,7 +378,8 @@ async function validateHash(hash, clientId) {
       login: "twitch",
       isVod: false,
       vodID: "",
-      playerType: "site"
+      playerType: "site",
+      platform: "web"
     },
     extensions: {
       persistedQuery: {
@@ -402,7 +403,8 @@ async function validateQuery(query, clientId) {
       login: "twitch",
       isVod: false,
       vodID: "",
-      playerType: "site"
+      playerType: "site",
+      platform: "web"
     }
   }, clientId);
   if (!response.ok || !response.body) return false;
