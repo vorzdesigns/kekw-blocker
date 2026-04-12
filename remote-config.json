@@ -1,7 +1,7 @@
 {
   "_schema": 2,
-  "_version": 66,
-  "_generatedAt": "2026-04-12T07:22:08.091Z",
+  "_version": 67,
+  "_generatedAt": "2026-04-12T07:22:36.579Z",
   "gql": {
     "clientId": {
       "active": {
@@ -31,10 +31,10 @@
       },
       "query": {
         "active": {
-          "value": "query PlaybackAccessToken($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!, $platform: String!) {\n  streamPlaybackAccessToken(\n    channelName: $login\n    params: {platform: $platform, playerBackend: \"mediaplayer\", playerType: $playerType}\n  ) @include(if: $isLive) {\n    value\n    signature\n    authorization {\n      isForbidden\n      forbiddenReasonCode\n    }\n  }\n  videoPlaybackAccessToken(\n    id: $vodID\n    params: {platform: $platform, playerBackend: \"mediaplayer\", playerType: $playerType}\n  ) @include(if: $isVod) {\n    value\n    signature\n  }\n}\n",
-          "validatedAt": "2026-04-12T07:22:08.090Z",
-          "source": "ast",
-          "confidence": "high"
+          "value": "query PlaybackAccessToken($login: String!, $isLive: Boolean!, $vodID: ID!, $isVod: Boolean!, $playerType: String!, $platform: String!) {\n  streamPlaybackAccessToken(\n    channelName: $login\n    params: {platform: $platform, playerBackend: \"mediaplayer\", playerType: $playerType}\n  ) @include(if: $isLive) {\n    value\n    signature\n    authorization {\n      isForbidden\n      forbiddenReasonCode\n    }\n  }\n  videoPlaybackAccessToken(\n    id: $vodID\n    params: {platform: $platform, playerBackend: \"mediaplayer\", playerType: $playerType}\n  ) @include(if: $isVod) {\n    value\n    signature\n  }\n}",
+          "validatedAt": "2026-04-12T07:22:36.578Z",
+          "source": "ai",
+          "confidence": "medium"
         }
       }
     }
@@ -42,6 +42,6 @@
   "signature": {
     "alg": "ed25519",
     "keyId": "k1",
-    "value": "4YYYrvz7s1sJFlUZzi1Y3h75QWGt/jQ42VYjL2QkSo1qeTMwlIE++4IspCAdD6c593ykl7HuyLpr9NZw3zgSBg=="
+    "value": "pyPzJFSqpxI2AaFm3/MrVuPmRsGBez+MHQ9FG5hS8WaAc4CKCMMIW6dyD5JPpgnhD5WXlQXcvQj8WFOh6e1fAA=="
   }
 }
